@@ -8,7 +8,7 @@ import os, sys, time
 
 # Plotting suite
 import matplotlib
- matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Model modules
@@ -24,15 +24,19 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 
 def sigmoid(x):
+	x = 10*(x - 0.5)
 	return 1/(1+np.exp(-x))
 
 
 class Hippocampus:
 
-	def __init__(self, vector_size, action_reward_size):
+	def __init__(self, vector_size, num_actions, num_rewards):
 		self.M = np.zeros([vector_size, vector_size], dtype=np.float32)
 		self.vector_size = vector_size
-		self.action_reward_size = action_reward_size
+
+		self.num_actions = num_actions
+		self.num_rewards = num_rewards
+		self.action_reward_size = num_actions + num_rewards
 		self.batch_size = 200
 
 
@@ -46,7 +50,7 @@ class Hippocampus:
 
 			trial_inds = np.arange(b*self.batch_size, (b+1)*self.batch_size).astype(np.int32)
 			self.M = self.M + par['train_alpha']*np.mean(event_data[trial_inds,:,np.newaxis]*event_data[trial_inds,np.newaxis,:], axis=0)
-			self.M = np.tanh(self.M)
+			self.M = sigmoid(self.M)
 
 			print('{} of {} batches complete.'.format(b+1, num_batches), end='\r')
 
@@ -71,7 +75,7 @@ class Hippocampus:
 
 			for i in range(par['associative_iters']):
 				L_batch = L_batch + par['train_beta']*(L_batch @ self.M)
-				L_batch = np.tanh(L_batch)
+				L_batch = sigmoid(L_batch)
 
 			L.append(L_batch)
 
@@ -82,14 +86,36 @@ class Hippocampus:
 
 	def eval_events(self, event_data):
 
-		event_data = np.tanh(event_data)
+		event_data = sigmoid(event_data)
 
 		loss = np.abs(self.L - event_data)
 
+		ar_arg_E_action = np.argmax(event_data[:,-self.action_reward_size:-self.num_rewards], axis=-1)
+		ar_arg_L_action = np.argmax(self.L[:,-self.action_reward_size:-self.num_rewards], axis=-1)
+
+		ar_arg_E_reward = np.argmax(event_data[:,-self.num_rewards:], axis=-1)
+		ar_arg_L_reward = np.argmax(self.L[:,-self.num_rewards:], axis=-1)
+
+		print('\n' + '-'*40 + '\n')
+		print('Action Association Accuracy: {:5.3f}'.format(np.mean(ar_arg_E_action==ar_arg_L_action)))
+		print('Reward Association Accuracy: {:5.3f}'.format(np.mean(ar_arg_E_reward==ar_arg_L_reward)))
+
+		act_inds = np.unique([ar_arg_E_action, ar_arg_L_action])
+		rew_inds = np.unique([ar_arg_E_reward, ar_arg_L_reward])
+
+		print('\nAction Index Accuracy Breakdown:')
+		for a in act_inds:
+			print('Index {} --> Acc. {:5.3f}'.format(a, np.mean((ar_arg_E_action==ar_arg_L_action)[np.where(ar_arg_E_action==a)])))
+
+		print('\nReward Index Accuracy Breakdown:')
+		for r in rew_inds:
+			print('Index {} --> Acc. {:5.3f}'.format(r, np.mean((ar_arg_E_reward==ar_arg_L_reward)[np.where(ar_arg_E_reward==r)])))
+
+
 		fig, ax = plt.subplots(1,3,figsize=(12,8), sharex=True, sharey=True)
-		ax[0].imshow(event_data, aspect='auto', clim=(-1,1), cmap='magma')
-		ax[1].imshow(self.L, aspect='auto', clim=(-2,2), cmap='magma')
-		ax[2].imshow(loss, aspect='auto', clim=(-1,1), cmap='magma')
+		ax[0].imshow(event_data, aspect='auto', clim=(0,1))
+		ax[1].imshow(self.L, aspect='auto', clim=(0,1))
+		ax[2].imshow(loss, aspect='auto', clim=(-1,1))
 
 		ax[0].set_ylabel('Trials')
 		ax[1].set_xlabel('Units (Neurons, Actions, Rewards)')
@@ -110,7 +136,16 @@ def main(event_data):
 	actions = event_data['actions']
 	rewards = event_data['rewards']
 
-	action_reward_size = actions.shape[1] + rewards.shape[1]
+	rew_set = np.unique(rewards)
+	new_rewards = np.zeros([rewards.shape[0],rew_set.shape[0]])
+	print('Reward indexing legend:')
+	for ind, rs in enumerate(rew_set):
+		print('Index {} --> Reward'.format(ind), rs)
+		for t in range(rewards.shape[0]):
+			new_rewards[t,ind] = 1. if rewards[t,0] == rs else -0.1
+	print()
+	rewards = new_rewards
+
 	training_data_size = np.int32(stimuli.shape[0]*(1-par['test_sample_prop']))
 
 	aggregate_events = np.concatenate([stimuli, actions, rewards], axis=1)
@@ -120,7 +155,7 @@ def main(event_data):
 	training_events = aggregate_events[:training_data_size,:]
 	testing_events  = aggregate_events[training_data_size:,:]
 
-	hippocampus = Hippocampus(vector_size, action_reward_size)
+	hippocampus = Hippocampus(vector_size, actions.shape[1], rewards.shape[1])
 	hippocampus.train_events(training_events)
 	hippocampus.test_events(testing_events)
 	hippocampus.eval_events(testing_events)

@@ -205,10 +205,14 @@ def main(gpu_id=None):
 					cortex.ent_loss, cortex.h, cortex.reward, cortex.action], feed_dict=feed_dict)
 
 			# Select appropriate events
-			event_times = np.where(reward != 0.)[0]
-			event_stimuli = trial_info['neural_input'][event_times,np.arange(par['batch_size']),:]
-			event_actions = action[event_times,np.arange(par['batch_size']),:]
-			event_rewards = reward[event_times,np.arange(par['batch_size']),:]
+			inds_a = np.where(reward != 0.)
+			inds_b = np.where(reward == 0.)
+			print(len(inds_a), inds_a[0].shape)
+			print(len(inds_b), inds_b[0].shape)
+			quit()
+			event_stimuli = trial_info['neural_input'][inds[0],inds[1],:]
+			event_actions = action[inds[0],inds[1],:]
+			event_rewards = reward[inds[0],inds[1],:]
 
 			# Sample from events and save the event data
 			event_data['stimuli'].append(event_stimuli[::par['sample_step'],:])

@@ -23,7 +23,7 @@ par = {
 	'n_val'				: 1,
 
 	# Encoder configuration
-	'n_latent'			: 512,
+	'n_latent'			: 50,
 	'enc_activity_cost'	: 0.1,
 	'enc_weight_cost'	: 0.05,
 	'internal_sampling'	: False,
@@ -33,7 +33,7 @@ par = {
 
 	# Hippocampus configuration
 	'test_sample_prop'	: 0.2,
-	'train_alpha'		: 0.1,
+	'train_alpha'		: 1.,
 	'train_beta'		: 0.1,
 	'associative_iters'	: 2,
 
