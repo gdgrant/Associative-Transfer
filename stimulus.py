@@ -64,6 +64,7 @@ class Stimulus:
 		if par['task'] == 'go':
 			self.task_types = [
 				[self.task_go, 'go', 0],
+				[self.task_go, 'go', np.pi]
 			]
 
 		elif par['task'] == 'dms':
