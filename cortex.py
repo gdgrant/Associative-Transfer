@@ -44,7 +44,7 @@ class Cortex:
 		base_var_prefixes = ['W_out', 'b_out', 'W_val', 'b_val']
 
 		# Current architecture is assumed to be LSTM
-		prefix_list = base_var_prefixes + [p+'_cor' for p in lstm_var_prefixes]
+		prefix_list = base_var_prefixes + lstm_var_prefixes
 
 		with tf.variable_scope('network'):
 			self.var_dict = {p:tf.get_variable(p, initializer=par[p+'_init']) for p in prefix_list}
@@ -111,11 +111,11 @@ class Cortex:
 			c : cell state
 			o : output gate	"""
 
-		f  = tf.sigmoid(x @ self.var_dict['Wf_cor'] + h @ self.var_dict['Uf_cor'] + self.var_dict['bf_cor'])
-		i  = tf.sigmoid(x @ self.var_dict['Wi_cor'] + h @ self.var_dict['Ui_cor'] + self.var_dict['bi_cor'])
-		cn = tf.tanh(x @ self.var_dict['Wc_cor'] + h @ self.var_dict['Uc_cor'] + self.var_dict['bc_cor'])
+		f  = tf.sigmoid(x @ self.var_dict['Wf'] + h @ self.var_dict['Uf'] + self.var_dict['bf'])
+		i  = tf.sigmoid(x @ self.var_dict['Wi'] + h @ self.var_dict['Ui'] + self.var_dict['bi'])
+		cn = tf.tanh(x @ self.var_dict['Wc'] + h @ self.var_dict['Uc'] + self.var_dict['bc'])
 		c  = f * c + i * cn
-		o  = tf.sigmoid(x @ self.var_dict['Wo_cor'] + h @ self.var_dict['Uo_cor'] + self.var_dict['bo_cor'])
+		o  = tf.sigmoid(x @ self.var_dict['Wo'] + h @ self.var_dict['Uo'] + self.var_dict['bo'])
 		h  = o * tf.tanh(c)
 
 		return h, c
