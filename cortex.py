@@ -183,7 +183,8 @@ def main(gpu_id=None):
 	
 	stim = stimulus.Stimulus()
 
-	with tf.Session() as sess:
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8) if gpu_id == '0' else tf.GPUOptions()
+	with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
 
 		device = '/cpu:0' if gpu_id is None else '/gpu:0'
 		with tf.device(device):
@@ -205,11 +206,10 @@ def main(gpu_id=None):
 					cortex.ent_loss, cortex.h, cortex.reward, cortex.action], feed_dict=feed_dict)
 
 			# Select appropriate events
-			inds_a = np.where(reward != 0.)
-			inds_b = np.where(reward == 0.)
-			print(len(inds_a), inds_a[0].shape)
-			print(len(inds_b), inds_b[0].shape)
-			quit()
+			inds = list(np.where(reward != 0.))
+			rew_zero_times = np.array([np.random.randint(ts) for ts in inds[0]])
+			inds[0] = np.array([np.random.choice([rt,zt], p=[0.75,0.25]) for rt, zt in zip(inds[0],rew_zero_times)])
+
 			event_stimuli = trial_info['neural_input'][inds[0],inds[1],:]
 			event_actions = action[inds[0],inds[1],:]
 			event_rewards = reward[inds[0],inds[1],:]

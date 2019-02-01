@@ -136,19 +136,16 @@ def main(event_data):
 	actions = event_data['actions']
 	rewards = event_data['rewards']
 
-	rew_set = np.unique(rewards)
-	new_rewards = np.zeros([rewards.shape[0],rew_set.shape[0]])
-	print('Reward indexing legend:')
-	for ind, rs in enumerate(rew_set):
-		print('Index {} --> Reward'.format(ind), rs)
-		for t in range(rewards.shape[0]):
-			new_rewards[t,ind] = 1. if rewards[t,0] == rs else -0.1
-	print()
-	rewards = new_rewards
+	reward_index = np.array([par['reward_map'][(r+1e-6).round(2)] for r in np.squeeze(rewards)])
+	rewards = np.zeros([rewards.shape[0],par['num_reward_types']])
+	rewards[np.arange(rewards.shape[0]),reward_index] = 1.
+
+	posterior_dist_data = 1-0.5*np.random.rand(stimuli.shape[0]) # 0.5 to 1
+	posterior = np.stack([posterior_dist_data, 1-posterior_dist_data], axis=1)
 
 	training_data_size = np.int32(stimuli.shape[0]*(1-par['test_sample_prop']))
 
-	aggregate_events = np.concatenate([stimuli, actions, rewards], axis=1)
+	aggregate_events = np.concatenate([posterior, stimuli, actions, rewards], axis=1)
 	np.random.shuffle(aggregate_events)
 	vector_size = aggregate_events.shape[1]
 
@@ -159,6 +156,8 @@ def main(event_data):
 	hippocampus.train_events(training_events)
 	hippocampus.test_events(testing_events)
 	hippocampus.eval_events(testing_events)
+
+	pickle.dump(hippocampus.M, open('./datadir/gotask_associative_memory.pkl','wb'))
 
 
 if __name__ == '__main__':
