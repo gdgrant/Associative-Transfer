@@ -65,7 +65,7 @@ par = {
 	'tuning_height'			: 4.0,
 
 	# Cost values
-	'gate_cost'				: 5e-3,
+	'gate_cost'				: 1e-3,
 	'spike_cost'            : 0.,
 	'weight_cost'           : 0.,
 	'entropy_cost'          : 0.001,

@@ -25,7 +25,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 class Model:
 
-	def __init__(self, stimulus, reward_data, mask, posterior, associative):
+	def __init__(self, stimulus, reward_data, mask, posterior, associative, gate_cost):
 
 		print('Defining graph...')
 
@@ -35,6 +35,8 @@ class Model:
 
 		self.posterior_dist	= posterior 	# Should be of shape [batch_size x n_tasks]
 		self.action_m		= associative 	# Should be of shape [n_assoc x n_assoc]
+
+		self.gate_cost		= gate_cost
 
 		self.declare_variables()
 		self.run_model()
@@ -212,7 +214,7 @@ class Model:
 
 		# Gate vlaue loss (penalty on indecisiveness)
 		#self.gate_loss = par['gate_cost']*tf.reduce_mean(self.g*(1-self.g))
-		self.gate_loss = par['gate_cost']*tf.reduce_mean((0.5-tf.abs(0.5-self.g))**2)
+		self.gate_loss = self.gate_cost*tf.reduce_mean((0.5-tf.abs(0.5-self.g))**2)
 
 		# Correct time mask shape
 		self.time_mask = self.time_mask[...,tf.newaxis]
@@ -294,6 +296,7 @@ def main(gpu_id=None):
 	m = tf.placeholder(tf.float32, [par['num_time_steps'], par['batch_size']], 'mask')
 	p = tf.placeholder(tf.float32, [par['batch_size'], par['n_tasks']], 'posterior')
 	a = tf.placeholder(tf.float32, [par['n_assoc'], par['n_assoc']], 'associative')
+	g = tf.placeholder(tf.float32, [], 'gate_cost')
 
 	stim = stimulus.Stimulus()
 	M = np.zeros([par['n_assoc'], par['n_assoc']], dtype=np.float32)
@@ -303,7 +306,7 @@ def main(gpu_id=None):
 
 		device = '/cpu:0' if gpu_id is None else '/gpu:0'
 		with tf.device(device):
-			model = Model(x, r, m, p, a)
+			model = Model(x, r, m, p, a, g)
 
 		sess.run(tf.global_variables_initializer())
 
@@ -319,14 +322,19 @@ def main(gpu_id=None):
 				posterior_dist[:,(t+1)%2] = 0.2
 
 				name, trial_info = stim.generate_trial(t)
-				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
-					m:trial_info['train_mask'], p:posterior_dist, a:M}
 
 				if t == 0:
+					feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
+						m:trial_info['train_mask'], p:posterior_dist, a:M, g:par['gate_cost']}
+
 					_, _, encoding, reward, pol_loss, gate, action = \
 						sess.run([model.train_cortex, model.train_gate, model.trial_encoding, \
 							model.reward, model.pol_loss, model.g, model.action], feed_dict=feed_dict)
+				
 				elif t == 1:
+					feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
+						m:trial_info['train_mask'], p:posterior_dist, a:M, g:0.}
+
 					_, encoding, reward, pol_loss, gate, action = \
 						sess.run([model.train_gate, model.trial_encoding, \
 							model.reward, model.pol_loss, model.g, model.action], feed_dict=feed_dict)
