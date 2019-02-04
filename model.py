@@ -156,7 +156,7 @@ class Model:
 	def hippocampus_associative(self, x, p):
 		""" Generate action associated with current stimulus and probability """
 
-		enc_x = x @ self.var_dict['encoder']
+		enc_x = tf.nn.relu(x @ self.var_dict['encoder'])
 		self.trial_encoding.append(enc_x)
 
 		L_output = tf.concat([p, enc_x, tf.zeros([par['batch_size'],par['n_output']+par['num_reward_types']])], axis=-1)
