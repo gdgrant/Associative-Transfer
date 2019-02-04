@@ -34,13 +34,13 @@ par = {
 
 	# Hippocampus configuration
 	'test_sample_prop'		: 0.2,
-	'train_alpha'			: 1.,
+	'train_alpha'			: 0.05,
 	'train_beta'			: 0.1,
-	'associative_iters'		: 2,
+	'associative_iters'		: 10,
 
 	# Timings and rates
 	'dt'					: 20,
-	'learning_rate'			: 5e-4,
+	'learning_rate'			: 2e-4,
 
 	# Variance values
 	'input_mean'			: 0.0,
@@ -72,7 +72,7 @@ par = {
 	'val_cost'              : 0.01,
 
 	# Training specs
-	'batch_size'			: 256,
+	'batch_size'			: 16,
 	'n_batches'				: 3000,		# 1500 to train straight cortex
 
 }
@@ -128,7 +128,7 @@ def update_dependencies():
 
 	# LSTM posterior distribution weights
 	for p in ['Pf', 'Pi', 'Po', 'Pc']: par[p+'_init'] = LSTM_weight([par['n_tasks'], par['n_hidden']])
-	
+
 	# Cortex RL weights and biases
 	par['W_out_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_hidden'], par['n_output']]).astype(np.float32)
 	par['b_out_init'] = np.zeros([1,par['n_output']], dtype=np.float32)
@@ -148,6 +148,14 @@ def update_dependencies():
 	par['encoder_weight_file'] = './datadir/gotask_50unit_input_encoder_weights.pkl'
 	print('--> Loading encoder from {}.'.format(par['encoder_weight_file']))
 	par['encoder_init'] = pickle.load(open(par['encoder_weight_file'], 'rb'))['weights']['W']
+
+	par['M_mask'] = np.ones((par['n_assoc'], par['n_assoc'])) - np.eye((par['n_assoc']))
+
+	par['reward_matrices'] = []
+	for j in range(par['num_reward_types']):
+		v = np.zeros((par['batch_size'], par['num_reward_types']), dtype = np.float32)
+		v[:, j] = 1
+		par['reward_matrices'].append(v)
 
 update_dependencies()
 print('--> Parameters successfully loaded.\n')

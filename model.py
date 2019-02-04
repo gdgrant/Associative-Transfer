@@ -8,7 +8,7 @@ import os, sys, time
 
 # Plotting suite
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 # Model modules
@@ -96,6 +96,7 @@ class Model:
 
 			# Decide between the two possible actions (policies) with a gate
 			pol_out, val_out, g	= self.gate_selector(ca, cv, ha, hv, self.posterior_dist)
+			self.pol_out.append(pol_out)
 
 			# Compute outputs for action and policy loss
 			action_index	= tf.multinomial(pol_out, 1)
@@ -112,7 +113,7 @@ class Model:
 			self.h.append(h)
 			self.c.append(c)
 			self.g.append(g)
-			self.pol_out.append(pol_out)
+			#self.pol_out.append(pol_out)
 			self.val_out.append(val_out)
 			self.action.append(action)
 			self.reward.append(reward)
@@ -156,9 +157,40 @@ class Model:
 	def hippocampus_associative(self, x, p):
 		""" Generate action associated with current stimulus and probability """
 
-		enc_x = x @ self.var_dict['encoder']
+		enc_x = tf.nn.relu(x @ self.var_dict['encoder'])
 		self.trial_encoding.append(enc_x)
 
+		action = 0.
+		value = 0.
+		alpha = [-10., -10., 10., 100.]
+
+		for j in range(par['num_reward_types']):
+			reward = tf.constant(par['reward_matrices'][j])
+			L_output = tf.concat([p, enc_x, tf.zeros([par['batch_size'],par['n_output']]), reward], axis=-1)
+			for i in range(par['associative_iters']):
+
+				# Apply action memory to provided information
+				L_output = L_output + par['train_beta']*(L_output @ self.action_m)
+
+				# Logistic activation -- shift midpoint to 0.5 and
+				# make curve steeper for faster decision convergence
+				#L_output = tf.nn.sigmoid(10*(L_output-0.5))
+
+			# Isolate suggested action vector
+			L_output = 5*tf.nn.sigmoid((L_output-20)/10)
+			a = L_output[:,-(par['n_output']+par['num_reward_types']):-par['num_reward_types']]
+			action += a*alpha[j]
+
+			# Isolate reward values and map one-hot to actual values
+			v = L_output[:,-par['num_reward_types']:]
+			v = v @ par['reward_map_matrix']
+			value += v*alpha[j]
+
+
+		return action, value
+
+
+		"""
 		L_output = tf.concat([p, enc_x, tf.zeros([par['batch_size'],par['n_output']+par['num_reward_types']])], axis=-1)
 		for i in range(par['associative_iters']):
 
@@ -178,11 +210,13 @@ class Model:
 
 		# Return action
 		return a, v
+		"""
 
 
 	def gate_selector(self, ca, cv, ha, hv, p):
 		""" Select whether to use the cortex action or the hippocampus action
 			based on the posterior distribution and the actions themselves """
+
 
 		# Calculate the two parts of the gate and then multiply them together
 		action_gate    = tf.nn.sigmoid(ca @ self.var_dict['W_cor_gate'] + ha @ self.var_dict['W_hip_gate'] \
@@ -191,8 +225,11 @@ class Model:
 		full_gate = action_gate * posterior_gate
 
 		# Make a "composite" action for the network to use by weighting with the gate value
-		action = full_gate*ca + (1-full_gate)*ha
-		value  = full_gate*cv + (1-full_gate)*hv
+		#action = full_gate*ca + (1-full_gate)*ha
+		#value  = full_gate*cv + (1-full_gate)*hv
+
+		action = ha
+		value = hv
 
 		# Return the action to use and the gate value
 		return action, value, full_gate
@@ -256,14 +293,36 @@ class Model:
 		self.train_gate = gate_optimizer.compute_gradients(total_loss)
 
 
-def update_associative_memory(M, stimulus, action, reward, posterior):
+def update_associative_memory(M, stimulus, action, reward, posterior, mask, time_mask):
 
 	def sigmoid(x):
 		x = 10*(x - 0.5)
 		return 1/(1+np.exp(-x))
 
+	#print('stimulus', stimulus.shape)
+	#print('action', action.shape)
+	#print('mask', mask.shape)
+	#print('reward', reward.shape)
+	#print('posterior', posterior.shape)
+
+	event_stimuli = np.reshape(stimulus, (-1, stimulus.shape[-1]))
+	event_actions = np.reshape(action, (-1, action.shape[-1]))
+	mask = np.reshape(mask, (-1, mask.shape[-1]))*np.reshape(time_mask, (-1, mask.shape[-1]))
+	reward = np.reshape(reward, (-1, reward.shape[-1]))
+
+	event_rewards = np.zeros((reward.shape[0],par['num_reward_types']), dtype = np.float32)
+	for k,v in par['reward_map'].items():
+		ind = np.where((reward[:, 0] == k)*(mask[:, 0] > 0)*(event_actions[:, -1] > -1))[0]
+		print('ind ',v, ' ', len(ind), reward.shape)
+		event_rewards[ind, v] = 1.
+	posterior = np.zeros((reward.shape[0], 2), dtype = np.float32)
+	posterior[:, 0] = 1.
+
+	"""
+
 	# Select appropriate events
-	inds = list(np.where(reward != 0.))
+	inds = list(np.where(reward >= 0))
+	print('inds', inds[0].shape)
 	rew_zero_times = np.array([np.random.randint(ts) for ts in inds[0]])
 	inds[0] = np.array([np.random.choice([rt,zt], p=[0.75,0.25]) for rt, zt in zip(inds[0],rew_zero_times)])
 
@@ -277,12 +336,18 @@ def update_associative_memory(M, stimulus, action, reward, posterior):
 	event_rewards = np.zeros([event_rewards.shape[0],par['num_reward_types']])
 	event_rewards[np.arange(event_rewards.shape[0]),reward_index] = 1.
 
-	# Update M with the new event data
-	event_data = np.concatenate([posterior, event_stimuli, event_actions, event_rewards], axis=1)
-	M = M + par['train_alpha']*np.mean(event_data[:,:,np.newaxis]*event_data[:,np.newaxis,:], axis=0)
-	M = sigmoid(M)
+	"""
 
-	return M
+	# Update M with the new event data
+	ind = np.where(np.sum(event_rewards, axis = 1) > 0)[0]
+	#plt.imshow(event_actions[ind,:], aspect = 'auto')
+	#plt.colorbar()
+	#plt.show()
+	event_data = np.concatenate([posterior[ind,:], event_stimuli[ind,:], event_actions[ind,:], event_rewards[ind,:]], axis=1)
+	M = (1 - par['train_alpha'])*M + par['train_alpha']*np.mean(event_data[:,:,np.newaxis]*event_data[:,np.newaxis,:], axis=0)
+	#M = sigmoid(M)
+
+	return M #*par['M_mask']
 
 
 def main(gpu_id=None):
@@ -327,10 +392,11 @@ def main(gpu_id=None):
 					feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
 						m:trial_info['train_mask'], p:posterior_dist, a:M, g:par['gate_cost']}
 
-					_, _, encoding, reward, pol_loss, gate, action = \
+					_, _, encoding, reward, pol_loss, gate, action, policy, mask = \
 						sess.run([model.train_cortex, model.train_gate, model.trial_encoding, \
-							model.reward, model.pol_loss, model.g, model.action], feed_dict=feed_dict)
-				
+							model.reward, model.pol_loss, model.g, model.action, model.pol_out,\
+							model.mask], feed_dict=feed_dict)
+
 				elif t == 1:
 					feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
 						m:trial_info['train_mask'], p:posterior_dist, a:M, g:0.}
@@ -338,10 +404,27 @@ def main(gpu_id=None):
 					_, encoding, reward, pol_loss, gate, action = \
 						sess.run([model.train_gate, model.trial_encoding, \
 							model.reward, model.pol_loss, model.g, model.action], feed_dict=feed_dict)
+					"""
+					encoding, reward, pol_loss, gate, action = \
+						sess.run([model.trial_encoding, \
+							model.reward, model.pol_loss, model.g, model.action], feed_dict=feed_dict)
+					"""
 
-				M = update_associative_memory(M, encoding, action, reward, posterior_dist)
+				M = update_associative_memory(M, encoding, action, reward, posterior_dist, mask, trial_info['train_mask'])
 
-				if i%100 == 0:
+				if i%5 == 0:
+
+					print('encoding ', encoding.shape)
+					print('policy ', policy.shape)
+					plt.imshow(encoding[:,0, :], aspect = 'auto')
+					plt.colorbar()
+					plt.show()
+					plt.imshow(policy[:,0, :], aspect = 'auto')
+					plt.colorbar()
+					plt.show()
+					plt.imshow(M, aspect = 'auto')
+					plt.colorbar()
+					plt.show()
 
 					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Gate: {:5.3f} | Pol. Loss: {:6.3f} |'.format(\
 						t, i, np.mean(np.sum(reward, axis=0)), np.mean(gate), pol_loss))

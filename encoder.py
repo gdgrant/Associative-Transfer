@@ -30,12 +30,12 @@ class Encoder:
 			self.W = tf.get_variable('W', initializer=tf.random_uniform_initializer(-0.5,0.5), shape=[par['n_input'], par['n_latent']])
 		else:
 			self.W = tf.get_variable('W', initializer=W, trainable=False)
-			
+
 		if type(U) is type(None):
 			self.U = tf.get_variable('U', initializer=tf.random_uniform_initializer(-0.5,0.5), shape=[par['n_latent'], par['n_input']])
 		else:
 			self.U = tf.get_variable('U', initializer=U, trainable=False)
-		
+
 		self.I = input_data
 
 		self.E = []
@@ -48,7 +48,7 @@ class Encoder:
 			self.R.append(R)
 
 		self.E = tf.stack(self.E, axis=0)
-		self.R = tf.stack(self.R, axis=0)	
+		self.R = tf.stack(self.R, axis=0)
 
 		self.loss_plot = 0.5 * tf.square(self.I - self.R)
 
@@ -73,7 +73,8 @@ def train_encoder(gpu_id=None):
 	update_parameters({'noise_in':0.05})
 	stim = stimulus.Stimulus()
 
-	with tf.Session() as sess:
+	gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.8) if gpu_id == '0' else tf.GPUOptions()
+	with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
 
 		device = '/cpu:0' if gpu_id is None else '/gpu:0'
 		with tf.device(device):
@@ -92,7 +93,7 @@ def train_encoder(gpu_id=None):
 					encoder.R, encoder.loss_plot], feed_dict=feed_dict)
 
 			if i%500 == 0:
-				
+
 				fig, ax = plt.subplots(3,5,figsize=(14,8))
 				for t in range(5):
 					ax[0,t].imshow(trial_info['neural_input'][:,t,:].T, aspect='auto')
@@ -214,6 +215,6 @@ if __name__ == '__main__':
 			print('Weight data file: {}'.format(args['wedata'][0]))
 			print('Event data file:  {}'.format(args['wedata'][1]))
 			generate_encoding(args['gpu_id'], args['wedata'][0], args['wedata'][1])
-		
+
 	except KeyboardInterrupt:
 		quit('Quit by KeyboardInterrupt.')
