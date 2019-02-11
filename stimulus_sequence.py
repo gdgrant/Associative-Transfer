@@ -9,7 +9,7 @@ class Stimulus:
 
 		# Stimulus shapes
 		self.input_shape    = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input'] ]
-		self.output_shape   = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_output'] ]
+		self.output_shape   = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol'] ]
 		self.stimulus_shape = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_motion_tuned'] ]
 		self.response_shape = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_motion_dirs'] ]
 		self.fixation_shape = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_fix_tuned'] ]
@@ -181,12 +181,12 @@ class Stimulus:
 		# Task parameters
 		if variant == 'go':
 			stim_onset = np.random.randint(self.fix_time, self.fix_time+1000, par['trials_per_seq'])//par['dt']
-			stim_off = -1
+			stim_off = par['num_time_steps']
 			fixation_end = np.ones(par['trials_per_seq'], dtype=np.int16)*(self.fix_time+1000)//par['dt']
 			resp_onset = fixation_end
 		elif variant == 'rt_go':
 			stim_onset = np.random.randint(self.fix_time, self.fix_time+1000, par['trials_per_seq'])//par['dt']
-			stim_off = -1
+			stim_off = par['num_time_steps']
 			fixation_end = np.ones(par['trials_per_seq'],dtype=np.int16)*par['num_time_steps']
 			resp_onset = stim_onset
 		elif variant == 'dly_go':
@@ -217,6 +217,8 @@ class Stimulus:
 			neuron_ind = range(self.modality_size*modality, self.modality_size*(1+modality))
 			stim_dir   = np.random.choice(self.motion_dirs)
 			target_ind = int(np.round(par['num_motion_dirs']*(stim_dir+offset)/(2*np.pi))%par['num_motion_dirs'])
+
+			#print('stim_dir', stim_dir)
 
 			self.trial_info['neural_input'][t0+stim_onset[b]:t0+stim_off, self.trial_num, neuron_ind] += np.reshape(self.circ_tuning(stim_dir),(1,-1))
 			self.trial_info['desired_output'][t0+resp_onset[b]:t1, self.trial_num, target_ind] = 1

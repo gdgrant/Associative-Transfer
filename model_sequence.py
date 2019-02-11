@@ -46,7 +46,7 @@ class Model:
 		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
 			'Vf', 'Vi', 'Vo', 'Vc', 'bf', 'bi', 'bo', 'bc', 'W_write']
 		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
-			'Vf', 'Vi', 'Vo', 'Vc', 'bf', 'bi', 'bo', 'bc']
+			'bf', 'bi', 'bo', 'bc', 'W_write']
 		RL_var_prefixes = ['W_pol', 'W_val', 'b_pol', 'b_val']
 
 		with tf.variable_scope('cortex'):
@@ -70,6 +70,8 @@ class Model:
 		h_write = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		c = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		A = tf.zeros([par['batch_size'], par['n_hidden'], par['n_hidden']], dtype = tf.float32)
+		action = tf.zeros([par['batch_size'], par['n_pol']])
+
 
 		for i in range(par['trials_per_seq']):
 
@@ -83,9 +85,11 @@ class Model:
 				# network hippocampus module
 				t = i*par['num_time_steps'] + j
 
-				h, c = self.cortex_lstm(self.stimulus_data[t], h, h_read, c)
+				input = tf.concat([mask*self.stimulus_data[t], h_read, reward, action], axis = 1)
 
-				#h_read, h_write, A = self.fast_weights(h, A)
+				h, c = self.cortex_lstm(input, h, c)
+
+				h_read, h_write, A = self.fast_weights(h, A)
 				#h_read *= 0
 
 				pol_out = h @ self.var_dict['W_pol'] + self.var_dict['b_pol']
@@ -93,11 +97,11 @@ class Model:
 
 				# Compute outputs for action and policy loss
 				action_index	= tf.multinomial(pol_out, 1)
-				action 			= tf.one_hot(tf.squeeze(action_index), par['n_output'])
+				action 			= tf.one_hot(tf.squeeze(action_index), par['n_pol'])
 				pol_out			= tf.nn.softmax(pol_out, -1) # Note softmax for entropy calculation
 
 				# Check for trial continuation (ends if previous reward is non-zero)
-				continue_trial	= tf.cast(tf.equal(reward, 0.), tf.float32)
+				continue_trial  = tf.cast(tf.equal(reward, 0.), tf.float32)
 				mask 		   *= continue_trial
 				reward			= tf.reduce_sum(action*self.reward_data[t,...], axis=-1, keep_dims=True) \
 									* mask * self.time_mask[t,:,tf.newaxis]
@@ -122,7 +126,7 @@ class Model:
 		self.mask = tf.stack(self.mask, axis=0)
 
 
-	def cortex_lstm(self, x, h, h_read, c):
+	def cortex_lstm(self, x, h, c):
 		""" Compute LSTM state from inputs and vars...
 				f : forgetting gate
 				i : input gate
@@ -131,10 +135,10 @@ class Model:
 			...and generate an action from that state. """
 
 		# Iterate LSTM
-		f  = tf.sigmoid(x @ self.var_dict['Wf'] + h @ self.var_dict['Uf'] + h_read @ self.var_dict['Vf'] + self.var_dict['bf'])
-		i  = tf.sigmoid(x @ self.var_dict['Wi'] + h @ self.var_dict['Ui'] + h_read @ self.var_dict['Vi'] + self.var_dict['bi'])
-		o  = tf.sigmoid(x @ self.var_dict['Wo'] + h @ self.var_dict['Uo'] + h_read @ self.var_dict['Vo'] + self.var_dict['bo'])
-		cn = tf.tanh(x @ self.var_dict['Wc'] + h @ self.var_dict['Uc'] + h_read @ self.var_dict['Vc'] + self.var_dict['bc'])
+		f  = tf.sigmoid(x @ self.var_dict['Wf'] + h @ self.var_dict['Uf'] + self.var_dict['bf'])
+		i  = tf.sigmoid(x @ self.var_dict['Wi'] + h @ self.var_dict['Ui'] + self.var_dict['bi'])
+		o  = tf.sigmoid(x @ self.var_dict['Wo'] + h @ self.var_dict['Uo'] + self.var_dict['bo'])
+		cn = tf.tanh(x @ self.var_dict['Wc'] + h @ self.var_dict['Uc'] + self.var_dict['bc'])
 		c  = f * c + i * cn
 		h  = o * tf.tanh(c)
 
@@ -178,7 +182,7 @@ class Model:
 		terminal_state = tf.cast(tf.logical_not(tf.equal(self.reward, tf.constant(0.))), tf.float32)
 
 		# Compute predicted value and the advantage for plugging into the policy loss
-		pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]#*(1-terminal_state)
+		pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]*(1-terminal_state)
 		advantage = pred_val - val_out[:-1,:,:]
 
 		# Stop gradients back through action, advantage, and mask
@@ -216,7 +220,7 @@ def main(gpu_id=None):
 
 	tf.reset_default_graph()
 	x = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input']], 'stim')
-	r = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_output']], 'reward')
+	r = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'reward')
 	m = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size']], 'mask')
 
 	stim = stimulus_sequence.Stimulus()
@@ -240,14 +244,16 @@ def main(gpu_id=None):
 
 				name, trial_info = stim.generate_trial(t)
 				"""
-				fig, ax = plt.subplots(2,1,figsize=(12,8),)
+				fig, ax = plt.subplots(3,1,figsize=(12,8),)
 				ax[0].imshow(trial_info['desired_output'][:, 0, :].T, aspect = 'auto')
 				ax[1].imshow(trial_info['reward_data'][:, 0, :].T, aspect = 'auto')
+				ax[2].imshow(trial_info['neural_input'][:, 0, :].T, aspect = 'auto')
 				plt.show()
 
-				fig, ax = plt.subplots(2,1,figsize=(12,8))
+				fig, ax = plt.subplots(3,1,figsize=(12,8))
 				ax[0].imshow(trial_info['desired_output'][:, 1, :].T, aspect = 'auto')
 				ax[1].imshow(trial_info['reward_data'][:, 1, :].T, aspect = 'auto')
+				ax[2].imshow(trial_info['neural_input'][:, 1, :].T, aspect = 'auto')
 				plt.show()
 				"""
 
@@ -258,10 +264,22 @@ def main(gpu_id=None):
 					sess.run([model.train_cortex, model.reward, model.pol_loss, model.action, model.h], feed_dict=feed_dict)
 
 
-				if i%5 == 0:
+				if i%10 == 0:
 
 					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} |'.format(\
 						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h)))
+
+				if i%250 == -1:
+					#print(np.squeeze(reward.shape))
+					plt.imshow(np.squeeze(reward), aspect = 'auto')
+					plt.colorbar()
+					plt.show()
+					plt.imshow(np.squeeze(action[:, 0, :]), aspect = 'auto')
+					plt.colorbar()
+					plt.show()
+					plt.imshow(np.squeeze(action[:, 1, :]), aspect = 'auto')
+					plt.colorbar()
+					plt.show()
 
 	print('Model complete.\n')
 
