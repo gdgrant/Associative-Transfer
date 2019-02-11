@@ -58,6 +58,7 @@ class Model:
 
 		self.h = []
 		self.h_write = []
+		self.h_read = []
 		self.c = []
 		self.pol_out = []
 		self.val_out = []
@@ -87,10 +88,12 @@ class Model:
 
 				input = tf.concat([mask*self.stimulus_data[t], h_read, reward, action], axis = 1)
 
-				h, c = self.cortex_lstm(input, h, c)
+				#input = tf.concat([mask*self.stimulus_data[t], h_read], axis = 1)
+				h, c = self.cortex_lstm(input, h_read, c)
 
+				#h_fast_weights = tf.concat([h, reward, action], axis = 1)
 				h_read, h_write, A = self.fast_weights(h, A)
-				#h_read *= 0
+				h_read *= 0
 
 				pol_out = h @ self.var_dict['W_pol'] + self.var_dict['b_pol']
 				val_out = h @ self.var_dict['W_val'] + self.var_dict['b_val']
@@ -109,6 +112,7 @@ class Model:
 				# Record outputs
 				self.h.append(h)
 				self.h_write.append(h_write)
+				self.h_read.append(h_read)
 				self.c.append(c)
 				self.pol_out.append(pol_out)
 				self.val_out.append(val_out)
@@ -118,6 +122,7 @@ class Model:
 
 		self.h = tf.stack(self.h, axis=0)
 		self.h_write = tf.stack(self.h_write, axis=0)
+		self.h_read = tf.stack(self.h_read, axis=0)
 		self.c = tf.stack(self.c, axis=0)
 		self.pol_out = tf.stack(self.pol_out, axis=0)
 		self.val_out = tf.stack(self.val_out, axis=0)
@@ -151,7 +156,7 @@ class Model:
 		h_read = h_write
 
 		for i in range(par['inner_steps']):
-			h_read = tf.nn.relu(tf.reduce_sum(A * h_read, axis = -1, keep_dims = True))
+			h_read = tf.nn.tanh(tf.reduce_sum(A * h_read, axis = -1, keep_dims = True))
 
 		A = par['A_alpha']*A + par['A_beta']*h_write*tf.transpose(h_write, [0, 2, 1])
 
@@ -234,9 +239,6 @@ def main(gpu_id=None):
 
 		sess.run(tf.global_variables_initializer())
 
-		print('\nGate value of 0 indicates using hippocampus (associative network).')
-		print('Gate value of 1 indicates using cortex (LSTM).\n')
-
 		for t in range(par['n_tasks']):
 			print()
 			for i in range(par['n_batches']):
@@ -260,14 +262,15 @@ def main(gpu_id=None):
 				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
 					m:trial_info['train_mask']}
 
-				_, reward, pol_loss, action, h = \
-					sess.run([model.train_cortex, model.reward, model.pol_loss, model.action, model.h], feed_dict=feed_dict)
+				_, reward, pol_loss, action, h, h_read = \
+					sess.run([model.train_cortex, model.reward, model.pol_loss, \
+					model.action, model.h, model.h_read], feed_dict=feed_dict)
 
 
-				if i%10 == 0:
+				if i%25 == 0:
 
-					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} |'.format(\
-						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h)))
+					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_r: {:6.6f}  |'.format(\
+						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h), np.mean(h_read)))
 
 				if i%250 == -1:
 					#print(np.squeeze(reward.shape))

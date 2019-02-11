@@ -12,8 +12,8 @@ print('\n--> Loading parameters...')
 par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
-	'LSTM_init'				: 0.01,
-	'w_init'				: 0.01,
+	'LSTM_init'				: 0.05,
+	'w_init'				: 0.05,
 
 	# Network shape
 	'num_motion_tuned'		: 64,
@@ -33,11 +33,11 @@ par = {
 
 	# read/write configuration
 	'A_alpha'				: 0.98,
-	'A_beta'				: 0.02,
+	'A_beta'				: 0.2,
 	'inner_steps'			: 1,
 
 	# Timings and rates
-	'learning_rate'			: 1e-3,
+	'learning_rate'			: 5e-4,
 
 	# Variance values
 	'input_mean'			: 0.0,
@@ -51,21 +51,21 @@ par = {
 	'mask_duration'			: 0,
 	'dead_time'				: 200,
 	'dt'					: 100,
-	'trials_per_seq'		: 10,
-	'task_list'				: [0],
+	'trials_per_seq'		: 20,
+	'task_list'				: [0,1,2,3,4,5,6,7,8,9,10,11],
 
 	# RL parameters
 	'fix_break_penalty'     : -1.,
-	'wrong_choice_penalty'  : -0.01,
+	'wrong_choice_penalty'  : -0.1,
 	'correct_choice_reward' : 1.,
-	'discount_rate'         : 0.,
+	'discount_rate'         : 0.9,
 
 	# Tuning function data
 	'num_motion_dirs'		: 8,
 	'tuning_height'			: 4.0,
 
 	# Cost values
-	'spike_cost'            : 0.001,
+	'spike_cost'            : 1e-8,
 	'weight_cost'           : 0.,
 	'entropy_cost'          : 0.0001,
 	'val_cost'              : 0.01,
@@ -113,40 +113,46 @@ def update_dependencies():
 
 	# Set input and output sizes
 	par['n_input']  = par['num_motion_tuned'] + par['num_fix_tuned'] + par['num_rule_tuned']
-	par['n_output'] = par['num_motion_dirs'] + 1
-	par['n_assoc']  = par['n_tasks'] + par['n_latent'] +  par['n_output'] + par['num_reward_types']
+	par['n_pol'] = par['num_motion_dirs'] + 1
+	par['n_assoc']  = par['n_tasks'] + par['n_latent'] +  par['n_pol'] + par['num_reward_types']
 
 	# Set trial step length
 	par['num_time_steps'] = par['trial_length']//par['dt']
 
 	# Set up standard LSTM weights and biases
 	LSTM_weight = lambda size : np.random.uniform(-par['LSTM_init'], par['LSTM_init'], size=size).astype(np.float32)
-	for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input'], par['n_hidden']])
-	for p in ['Uf', 'Ui', 'Uo', 'Uc']: par[p+'_init'] = LSTM_weight([par['n_hidden'], par['n_hidden']])
-	for p in ['Vf', 'Vi', 'Vo', 'Vc']: par[p+'_init'] = LSTM_weight([par['n_hidden'], par['n_hidden']])
-	for p in ['bf', 'bi', 'bo', 'bc']: par[p+'_init'] = np.zeros([1, par['n_hidden']], dtype=np.float32)
+
+	# option 1
+	#for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input']+par['n_hidden'], par['n_hidden']])
+	#par['W_write_init'] = LSTM_weight([par['n_hidden']+par['n_val']+par['n_pol'], par['n_hidden'], 1])
+	# option 2
+	for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input']+par['n_hidden']+par['n_val']+par['n_pol'], par['n_hidden']])
 	par['W_write_init'] = LSTM_weight([par['n_hidden'], par['n_hidden'], 1])
+
+	for p in ['Uf', 'Ui', 'Uo', 'Uc']: par[p+'_init'] = LSTM_weight([par['n_hidden'], par['n_hidden']])
+	for p in ['bf', 'bi', 'bo', 'bc']: par[p+'_init'] = np.zeros([1, par['n_hidden']], dtype=np.float32)
+
 
 
 	# LSTM posterior distribution weights
-	for p in ['Pf', 'Pi', 'Po', 'Pc']: par[p+'_init'] = LSTM_weight([par['n_tasks'], par['n_hidden']])
+	#for p in ['Pf', 'Pi', 'Po', 'Pc']: par[p+'_init'] = LSTM_weight([par['n_tasks'], par['n_hidden']])
 
 	# Cortex RL weights and biases
-	par['W_pol_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_hidden'], par['n_output']]).astype(np.float32)
-	par['b_pol_init'] = np.zeros([1,par['n_output']], dtype=np.float32)
+	par['W_pol_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_hidden'], par['n_pol']]).astype(np.float32)
+	par['b_pol_init'] = np.zeros([1,par['n_pol']], dtype=np.float32)
 	par['W_val_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_hidden'], par['n_val']]).astype(np.float32)
 	par['b_val_init'] = np.zeros([1,par['n_val']], dtype=np.float32)
 
 	par['sequence_mask'] = np.ones((par['num_time_steps']*par['trials_per_seq'], par['batch_size'], 1), dtype = np.float32)
 	# removes the first N trials, allowing the network to figure out the current task in the sequence
-	N = 0
+	N = 5
 	par['sequence_mask'][:par['num_time_steps']*N, :, 0] = 0.
 
 	# Gate weights and biases
 	"""
 	par['W_pos_gate_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_tasks'],1]).astype(np.float32)
-	par['W_cor_gate_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_output'],1]).astype(np.float32)
-	par['W_hip_gate_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_output'],1]).astype(np.float32)
+	par['W_cor_gate_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_pol'],1]).astype(np.float32)
+	par['W_hip_gate_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_pol'],1]).astype(np.float32)
 	par['W_cor_gate_val_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_val'],1]).astype(np.float32)
 	par['W_hip_gate_val_init'] = np.random.uniform(-par['w_init'], par['w_init'], size=[par['n_val'],1]).astype(np.float32)
 	par['b_act_gate_init'] = np.ones([1,1], dtype=np.float32)
