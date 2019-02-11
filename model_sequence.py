@@ -45,6 +45,8 @@ class Model:
 		self.var_dict = {}
 		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
 			'Vf', 'Vi', 'Vo', 'Vc', 'bf', 'bi', 'bo', 'bc', 'W_write']
+		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
+			'Vf', 'Vi', 'Vo', 'Vc', 'bf', 'bi', 'bo', 'bc']
 		RL_var_prefixes = ['W_pol', 'W_val', 'b_pol', 'b_val']
 
 		with tf.variable_scope('cortex'):
@@ -55,17 +57,17 @@ class Model:
 	def run_model(self):
 
 		self.h = []
+		self.h_write = []
 		self.c = []
-		self.g = []
 		self.pol_out = []
 		self.val_out = []
 		self.action  = []
 		self.reward  = []
 		self.mask    = []
-		self.trial_encoding = []
 
 		h = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		h_read = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
+		h_write = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		c = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		A = tf.zeros([par['batch_size'], par['n_hidden'], par['n_hidden']], dtype = tf.float32)
 
@@ -83,7 +85,8 @@ class Model:
 
 				h, c = self.cortex_lstm(self.stimulus_data[t], h, h_read, c)
 
-				h_read, A = self.fast_weights(h, A)
+				#h_read, h_write, A = self.fast_weights(h, A)
+				#h_read *= 0
 
 				pol_out = h @ self.var_dict['W_pol'] + self.var_dict['b_pol']
 				val_out = h @ self.var_dict['W_val'] + self.var_dict['b_val']
@@ -101,6 +104,7 @@ class Model:
 
 				# Record outputs
 				self.h.append(h)
+				self.h_write.append(h_write)
 				self.c.append(c)
 				self.pol_out.append(pol_out)
 				self.val_out.append(val_out)
@@ -109,6 +113,7 @@ class Model:
 				self.mask.append(mask)
 
 		self.h = tf.stack(self.h, axis=0)
+		self.h_write = tf.stack(self.h_write, axis=0)
 		self.c = tf.stack(self.c, axis=0)
 		self.pol_out = tf.stack(self.pol_out, axis=0)
 		self.val_out = tf.stack(self.val_out, axis=0)
@@ -146,7 +151,7 @@ class Model:
 
 		A = par['A_alpha']*A + par['A_beta']*h_write*tf.transpose(h_write, [0, 2, 1])
 
-		return tf.squeeze(h_read), A
+		return tf.squeeze(h_read), h_write, A
 
 
 	def optimize(self):
@@ -158,10 +163,10 @@ class Model:
 		cortex_optimizer = AdamOpt.AdamOpt(cortex_vars, learning_rate=par['learning_rate'])
 
 		# Spiking activity loss (penalty on high activation values in the hidden layer)
-		"""
+
 		self.spike_loss = par['spike_cost']*tf.reduce_mean(tf.stack([mask*time_mask*tf.reduce_mean(h) \
-			for (h, mask, time_mask) in zip(tf.unstack(self.h), tf.unstack(self.mask), tf.unstack(self.time_mask))]))
-		"""
+			for (h, mask, time_mask) in zip(tf.unstack(self.h_write), tf.unstack(self.mask), tf.unstack(self.time_mask))]))
+
 
 		# Correct time mask shape
 		self.time_mask = self.time_mask[...,tf.newaxis]
@@ -173,7 +178,7 @@ class Model:
 		terminal_state = tf.cast(tf.logical_not(tf.equal(self.reward, tf.constant(0.))), tf.float32)
 
 		# Compute predicted value and the advantage for plugging into the policy loss
-		pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]*(1-terminal_state)
+		pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]#*(1-terminal_state)
 		advantage = pred_val - val_out[:-1,:,:]
 
 		# Stop gradients back through action, advantage, and mask
@@ -198,7 +203,7 @@ class Model:
 		RL_loss = self.pol_loss + self.val_loss - self.ent_loss
 
 		# Collect loss terms and compute gradients
-		total_loss = RL_loss
+		total_loss = RL_loss + self.spike_loss
 		self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
 
 
@@ -249,14 +254,14 @@ def main(gpu_id=None):
 				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
 					m:trial_info['train_mask']}
 
-				_, reward, pol_loss, action = \
-					sess.run([model.train_cortex, model.reward, model.pol_loss, model.action], feed_dict=feed_dict)
+				_, reward, pol_loss, action, h = \
+					sess.run([model.train_cortex, model.reward, model.pol_loss, model.action, model.h], feed_dict=feed_dict)
 
 
 				if i%5 == 0:
 
-					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} |'.format(\
-						t, i, np.mean(np.sum(reward, axis=0)), pol_loss))
+					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} |'.format(\
+						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h)))
 
 	print('Model complete.\n')
 

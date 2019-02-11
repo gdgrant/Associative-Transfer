@@ -12,8 +12,8 @@ print('\n--> Loading parameters...')
 par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
-	'LSTM_init'				: 0.05,
-	'w_init'				: 0.05,
+	'LSTM_init'				: 0.01,
+	'w_init'				: 0.01,
 
 	# Network shape
 	'num_motion_tuned'		: 64,
@@ -34,7 +34,7 @@ par = {
 	# read/write configuration
 	'A_alpha'				: 0.98,
 	'A_beta'				: 0.02,
-	'inner_steps'			: 5,
+	'inner_steps'			: 1,
 
 	# Timings and rates
 	'learning_rate'			: 1e-3,
@@ -51,23 +51,23 @@ par = {
 	'mask_duration'			: 0,
 	'dead_time'				: 200,
 	'dt'					: 100,
-	'trials_per_seq'		: 25,
-	'task_list'				: [0,1,2,3,4,5],
+	'trials_per_seq'		: 10,
+	'task_list'				: [0],
 
 	# RL parameters
 	'fix_break_penalty'     : -1.,
 	'wrong_choice_penalty'  : -0.01,
 	'correct_choice_reward' : 1.,
-	'discount_rate'         : 0.9,
+	'discount_rate'         : 0.,
 
 	# Tuning function data
 	'num_motion_dirs'		: 8,
 	'tuning_height'			: 4.0,
 
 	# Cost values
-	'spike_cost'            : 0.,
+	'spike_cost'            : 0.001,
 	'weight_cost'           : 0.,
-	'entropy_cost'          : 0.001,
+	'entropy_cost'          : 0.0001,
 	'val_cost'              : 0.01,
 
 	# Training specs
@@ -139,7 +139,7 @@ def update_dependencies():
 
 	par['sequence_mask'] = np.ones((par['num_time_steps']*par['trials_per_seq'], par['batch_size'], 1), dtype = np.float32)
 	# removes the first N trials, allowing the network to figure out the current task in the sequence
-	N = 10
+	N = 0
 	par['sequence_mask'][:par['num_time_steps']*N, :, 0] = 0.
 
 	# Gate weights and biases
