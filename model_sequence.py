@@ -117,7 +117,7 @@ class Model:
 									* mask * self.time_mask[t,:,tf.newaxis]
 
 				# Record outputs
-				if i > 4: # discard the first 5 trials
+				if i > par['dead_trials']: # discard the first ~5 trials
 					self.h.append(h)
 					self.h_write.append(h_write)
 					self.h_hat.append(h_hat)
