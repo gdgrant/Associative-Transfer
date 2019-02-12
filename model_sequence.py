@@ -25,12 +25,13 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 
 class Model:
 
-	def __init__(self, stimulus, reward_data, mask):
+	def __init__(self, stimulus, reward_data, target_out, mask):
 
 		print('Defining graph...')
 
 		self.stimulus_data	= stimulus
 		self.reward_data	= reward_data
+		self.target_out     = target_out
 		self.time_mask		= mask
 
 		self.declare_variables()
@@ -46,7 +47,7 @@ class Model:
 		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
 			'Vf', 'Vi', 'Vo', 'Vc', 'bf', 'bi', 'bo', 'bc', 'W_write']
 		lstm_var_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
-			'bf', 'bi', 'bo', 'bc', 'W_write']
+			'bf', 'bi', 'bo', 'bc', 'W_write', 'W_read']
 		RL_var_prefixes = ['W_pol', 'W_val', 'b_pol', 'b_val']
 
 		with tf.variable_scope('cortex'):
@@ -59,18 +60,22 @@ class Model:
 		self.h = []
 		self.h_write = []
 		self.h_read = []
+		self.h_hat = []
+		self.h_concat = []
 		self.c = []
 		self.pol_out = []
 		self.val_out = []
 		self.action  = []
 		self.reward  = []
 		self.mask    = []
+		self.salient = []
+		self.pol_out_raw  = []
 
 		h = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
-		h_read = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
-		h_write = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
+		h_read = tf.zeros([par['batch_size'], par['n_latent']], dtype = tf.float32)
+		h_write = tf.zeros([par['batch_size'], par['n_latent']], dtype = tf.float32)
 		c = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
-		A = tf.zeros([par['batch_size'], par['n_hidden'], par['n_hidden']], dtype = tf.float32)
+		A = tf.zeros([par['batch_size'], par['n_latent'], par['n_latent']], dtype = tf.float32)
 		action = tf.zeros([par['batch_size'], par['n_pol']])
 
 
@@ -86,14 +91,19 @@ class Model:
 				# network hippocampus module
 				t = i*par['num_time_steps'] + j
 
-				input = tf.concat([mask*self.stimulus_data[t], h_read, reward, action], axis = 1)
+				input = tf.concat([mask*self.stimulus_data[t], h_read], axis = 1)
 
 				#input = tf.concat([mask*self.stimulus_data[t], h_read], axis = 1)
-				h, c = self.cortex_lstm(input, h_read, c)
+				h, c = self.cortex_lstm(input, h, c)
 
-				#h_fast_weights = tf.concat([h, reward, action], axis = 1)
-				h_read, h_write, A = self.fast_weights(h, A)
-				h_read *= 0
+				salient = tf.cast(tf.not_equal(reward, tf.constant(0.)), tf.float32)
+				h_concat = tf.concat([self.stimulus_data[t], h, reward, action], axis = 1)
+				h_write = tf.nn.relu(tf.tensordot(h_concat, self.var_dict['W_write'], axes = [[1], [0]]))
+				h_hat = tf.tensordot(h_write, self.var_dict['W_read'], axes = [[1], [0]])
+
+				h_write = tf.reshape(h_write,[par['batch_size'], par['n_latent'], 1])
+				h_read,  A = self.fast_weights(h_write, A, salient)
+				#h_read *= 0
 
 				pol_out = h @ self.var_dict['W_pol'] + self.var_dict['b_pol']
 				val_out = h @ self.var_dict['W_val'] + self.var_dict['b_val']
@@ -101,7 +111,7 @@ class Model:
 				# Compute outputs for action and policy loss
 				action_index	= tf.multinomial(pol_out, 1)
 				action 			= tf.one_hot(tf.squeeze(action_index), par['n_pol'])
-				pol_out			= tf.nn.softmax(pol_out, -1) # Note softmax for entropy calculation
+				pol_out_sm		= tf.nn.softmax(pol_out, -1) # Note softmax for entropy calculation
 
 				# Check for trial continuation (ends if previous reward is non-zero)
 				continue_trial  = tf.cast(tf.equal(reward, 0.), tf.float32)
@@ -113,18 +123,25 @@ class Model:
 				self.h.append(h)
 				self.h_write.append(h_write)
 				self.h_read.append(h_read)
+				self.h_hat.append(h_hat)
+				self.h_concat.append(h_concat)
 				self.c.append(c)
-				self.pol_out.append(pol_out)
+				self.pol_out.append(pol_out_sm)
+				self.pol_out_raw.append(pol_out)
 				self.val_out.append(val_out)
 				self.action.append(action)
 				self.reward.append(reward)
 				self.mask.append(mask)
+				self.salient.append(salient)
 
 		self.h = tf.stack(self.h, axis=0)
 		self.h_write = tf.stack(self.h_write, axis=0)
 		self.h_read = tf.stack(self.h_read, axis=0)
+		self.h_hat = tf.stack(self.h_hat, axis=0)
+		self.h_concat = tf.stack(self.h_concat, axis=0)
 		self.c = tf.stack(self.c, axis=0)
 		self.pol_out = tf.stack(self.pol_out, axis=0)
+		self.pol_out_raw = tf.stack(self.pol_out_raw, axis=0)
 		self.val_out = tf.stack(self.val_out, axis=0)
 		self.action = tf.stack(self.action, axis=0)
 		self.reward = tf.stack(self.reward, axis=0)
@@ -150,17 +167,18 @@ class Model:
 		# Return action, hidden state, and cell state
 		return h, c
 
-	def fast_weights(self, h, A):
+	def fast_weights(self, h, A, salient):
 
-		h_write = tf.nn.relu(tf.tensordot(h, self.var_dict['W_write'], axes = [[1], [0]]))
-		h_read = h_write
+		A_new = par['A_alpha']*A + par['A_beta']*(tf.reshape(salient,[par['batch_size'],1,1])*h)*tf.transpose(h, [0, 2, 1])*par['A_mask']
 
 		for i in range(par['inner_steps']):
-			h_read = tf.nn.tanh(tf.reduce_sum(A * h_read, axis = -1, keep_dims = True))
+			h = tf.reduce_sum(A * h, axis = -1, keep_dims = True)
+			# layer normalization
+			#u, v = tf.nn.moments(h, axes = [1], keep_dims = True)
+			#h = tf.nn.relu((h-u)/tf.sqrt(1e-9+v))
+			h = tf.nn.relu(h)
 
-		A = par['A_alpha']*A + par['A_beta']*h_write*tf.transpose(h_write, [0, 2, 1])
-
-		return tf.squeeze(h_read), h_write, A
+		return tf.squeeze(h), A_new
 
 
 	def optimize(self):
@@ -172,13 +190,17 @@ class Model:
 		cortex_optimizer = AdamOpt.AdamOpt(cortex_vars, learning_rate=par['learning_rate'])
 
 		# Spiking activity loss (penalty on high activation values in the hidden layer)
+		self.time_mask = self.time_mask[...,tf.newaxis]*par['sequence_mask'] # sequence mask will remove the first ~5 trials from training
+		h_write = tf.reduce_mean(self.h_write,axis = 2)
+		self.spike_loss = par['spike_cost']*tf.reduce_mean(self.mask*self.time_mask*h_write)
 
-		self.spike_loss = par['spike_cost']*tf.reduce_mean(tf.stack([mask*time_mask*tf.reduce_mean(h) \
-			for (h, mask, time_mask) in zip(tf.unstack(self.h_write), tf.unstack(self.mask), tf.unstack(self.time_mask))]))
+		self.reconstruction_loss = par['rec_cost']*tf.reduce_mean(self.mask*self.time_mask*tf.square(self.h_concat-self.h_hat))
 
+		self.task_loss = tf.reduce_mean(tf.squeeze(self.mask*self.time_mask)*tf.nn.softmax_cross_entropy_with_logits_v2(logits = self.pol_out_raw, \
+			labels = self.target_out, dim = -1))
 
 		# Correct time mask shape
-		self.time_mask = self.time_mask[...,tf.newaxis]
+
 
 		# Get the value outputs of the network, and pad the last time step
 		val_out = tf.concat([self.val_out, tf.zeros([1,par['batch_size'],par['n_val']])], axis=0)
@@ -197,7 +219,7 @@ class Model:
 		pred_val_static  = tf.stop_gradient(pred_val)
 
 		# Multiply masks together
-		full_mask        = mask_static*self.time_mask*par['sequence_mask']
+		full_mask        = mask_static*self.time_mask
 
 		# Policy loss
 		self.pol_loss = -tf.reduce_mean(full_mask*advantage_static*action_static*tf.log(epsilon+self.pol_out))
@@ -212,7 +234,10 @@ class Model:
 		RL_loss = self.pol_loss + self.val_loss - self.ent_loss
 
 		# Collect loss terms and compute gradients
-		total_loss = RL_loss + self.spike_loss
+		if par['learning_method'] == 'RL':
+			total_loss = RL_loss + self.spike_loss + self.reconstruction_loss
+		elif par['learning_method'] == 'SL':
+			total_loss = self.task_loss + self.spike_loss + self.reconstruction_loss + 1e-15*self.val_loss
 		self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
 
 
@@ -226,6 +251,7 @@ def main(gpu_id=None):
 	tf.reset_default_graph()
 	x = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input']], 'stim')
 	r = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'reward')
+	to = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'target')
 	m = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size']], 'mask')
 
 	stim = stimulus_sequence.Stimulus()
@@ -235,7 +261,7 @@ def main(gpu_id=None):
 
 		device = '/cpu:0' if gpu_id is None else '/gpu:0'
 		with tf.device(device):
-			model = Model(x, r, m)
+			model = Model(x, r, to, m)
 
 		sess.run(tf.global_variables_initializer())
 
@@ -260,17 +286,17 @@ def main(gpu_id=None):
 				"""
 
 				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
-					m:trial_info['train_mask']}
+					to: trial_info['desired_output'], m:trial_info['train_mask']}
 
-				_, reward, pol_loss, action, h, h_read = \
+				_, reward, pol_loss, action, h, h_write, salient, rec_loss = \
 					sess.run([model.train_cortex, model.reward, model.pol_loss, \
-					model.action, model.h, model.h_read], feed_dict=feed_dict)
+					model.action, model.h, model.h_write, model.salient, model.reconstruction_loss], feed_dict=feed_dict)
 
 
 				if i%25 == 0:
 
-					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_r: {:6.6f}  |'.format(\
-						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h), np.mean(h_read)))
+					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_w: {:6.6f}  | Rec. loos: {:6.5f}  |'.format(\
+						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h), np.mean(h_write), np.mean(rec_loss)))
 
 				if i%250 == -1:
 					#print(np.squeeze(reward.shape))

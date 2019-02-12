@@ -12,6 +12,7 @@ print('\n--> Loading parameters...')
 par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
+	'learning_method'		: 'SL', # 'RL' or 'SL'
 	'LSTM_init'				: 0.05,
 	'w_init'				: 0.05,
 
@@ -23,7 +24,7 @@ par = {
 	'n_val'					: 1,
 
 	# Encoder configuration
-	'n_latent'				: 50,
+	'n_latent'				: 100,
 	'enc_activity_cost'		: 0.1,
 	'enc_weight_cost'		: 0.05,
 	'internal_sampling'		: False,
@@ -33,11 +34,11 @@ par = {
 
 	# read/write configuration
 	'A_alpha'				: 0.98,
-	'A_beta'				: 0.2,
+	'A_beta'				: 0.5,
 	'inner_steps'			: 1,
 
 	# Timings and rates
-	'learning_rate'			: 5e-4,
+	'learning_rate'			: 2e-3,
 
 	# Variance values
 	'input_mean'			: 0.0,
@@ -52,7 +53,7 @@ par = {
 	'dead_time'				: 200,
 	'dt'					: 100,
 	'trials_per_seq'		: 20,
-	'task_list'				: [0,1,2,3,4,5,6,7,8,9,10,11],
+	'task_list'				: [0,1,2,3,4,5],
 
 	# RL parameters
 	'fix_break_penalty'     : -1.,
@@ -65,9 +66,10 @@ par = {
 	'tuning_height'			: 4.0,
 
 	# Cost values
-	'spike_cost'            : 1e-8,
+	'spike_cost'            : 8e-2,
+	'rec_cost'				: 8e-2,
 	'weight_cost'           : 0.,
-	'entropy_cost'          : 0.0001,
+	'entropy_cost'          : 0.001,
 	'val_cost'              : 0.01,
 
 	# Training specs
@@ -124,10 +126,11 @@ def update_dependencies():
 
 	# option 1
 	#for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input']+par['n_hidden'], par['n_hidden']])
-	#par['W_write_init'] = LSTM_weight([par['n_hidden']+par['n_val']+par['n_pol'], par['n_hidden'], 1])
+	#par['W_write_init'] = LSTM_weight([par['n_input']+par['n_val']+par['n_pol'], par['n_latent']])
 	# option 2
-	for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input']+par['n_hidden']+par['n_val']+par['n_pol'], par['n_hidden']])
-	par['W_write_init'] = LSTM_weight([par['n_hidden'], par['n_hidden'], 1])
+	for p in ['Wf', 'Wi', 'Wo', 'Wc']: par[p+'_init'] = LSTM_weight([par['n_input']+par['n_latent'], par['n_hidden']])
+	par['W_write_init'] = LSTM_weight([par['n_input']+par['n_hidden']+par['n_val']+par['n_pol'], par['n_latent']])
+	par['W_read_init'] = LSTM_weight([par['n_latent'],par['n_input']+par['n_hidden']+par['n_val']+par['n_pol']])
 
 	for p in ['Uf', 'Ui', 'Uo', 'Uc']: par[p+'_init'] = LSTM_weight([par['n_hidden'], par['n_hidden']])
 	for p in ['bf', 'bi', 'bo', 'bc']: par[p+'_init'] = np.zeros([1, par['n_hidden']], dtype=np.float32)
@@ -147,6 +150,8 @@ def update_dependencies():
 	# removes the first N trials, allowing the network to figure out the current task in the sequence
 	N = 5
 	par['sequence_mask'][:par['num_time_steps']*N, :, 0] = 0.
+
+	par['A_mask'] = np.ones((par['n_latent'], par['n_latent']), dtype = np.float32) - np.eye((par['n_latent']), dtype = np.float32)
 
 	# Gate weights and biases
 	"""

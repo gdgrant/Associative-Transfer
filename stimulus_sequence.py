@@ -75,7 +75,7 @@ class Stimulus:
 		elif par['task'] == 'multistim':
 
 			self.task_types = []
-			for offset in [0, np.pi/2, np.pi, -np.pi/2]:
+			for offset in [0, np.pi]:
 				self.task_types.append([self.task_go, 'go', offset])
 				self.task_types.append([self.task_go, 'rt_go', offset])
 				self.task_types.append([self.task_go, 'dly_go', offset])
