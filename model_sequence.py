@@ -174,9 +174,11 @@ class Model:
 		for i in range(par['inner_steps']):
 			h = tf.reduce_sum(A * h, axis = -1, keep_dims = True)
 			# layer normalization
-			#u, v = tf.nn.moments(h, axes = [1], keep_dims = True)
-			#h = tf.nn.relu((h-u)/tf.sqrt(1e-9+v))
-			h = tf.nn.relu(h)
+			if par['batch_norm_inner']:
+				u, v = tf.nn.moments(h, axes = [1], keep_dims = True)
+				h = tf.nn.relu((h-u)/tf.sqrt(1e-9+v))
+			else:
+				h = tf.nn.relu(h)
 
 		return tf.squeeze(h), A_new
 
@@ -317,7 +319,7 @@ def main(gpu_id=None):
 
 def print_important_params():
 
-	notes = ''
+	notes = 'with layer normalization'
 
 	keys = ['learning_method', 'n_hidden', 'n_latent', \
 		'A_alpha', 'A_beta', 'inner_steps', 'learning_rate', \

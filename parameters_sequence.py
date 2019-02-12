@@ -20,7 +20,7 @@ par = {
 	'num_motion_tuned'		: 64,
 	'num_fix_tuned'			: 4,
 	'num_rule_tuned'		: 0,
-	'n_hidden'				: 50,
+	'n_hidden'				: 150,
 	'n_val'					: 1,
 
 	# Encoder configuration
@@ -36,6 +36,7 @@ par = {
 	'A_alpha'				: 0.98,
 	'A_beta'				: 0.5,
 	'inner_steps'			: 1,
+	'batch_norm_inner'		: True,
 
 	# Timings and rates
 	'learning_rate'			: 2e-3,
