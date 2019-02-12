@@ -12,6 +12,7 @@ print('\n--> Loading parameters...')
 par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
+	'save_fn'				: 'general',
 	'learning_method'		: 'SL', # 'RL' or 'SL'
 	'LSTM_init'				: 0.05,
 	'w_init'				: 0.05,
@@ -36,7 +37,7 @@ par = {
 	'A_alpha'				: 0.98,
 	'A_beta'				: 0.5,
 	'inner_steps'			: 1,
-	'batch_norm_inner'		: True,
+	'batch_norm_inner'		: False,
 
 	# Timings and rates
 	'learning_rate'			: 2e-3,
@@ -54,7 +55,7 @@ par = {
 	'dead_time'				: 200,
 	'dt'					: 100,
 	'trials_per_seq'		: 20,
-	'task_list'				: [0,1,2,3,4,5],
+	'task_list'				: [a for a in range(12)],
 
 	# RL parameters
 	'fix_break_penalty'     : -1.,

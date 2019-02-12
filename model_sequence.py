@@ -38,7 +38,7 @@ class Model:
 		self.run_model()
 		self.optimize()
 
-		print('Graph successfully defined.')
+		print('Graph successfully defined.\n')
 
 
 	def declare_variables(self):
@@ -255,7 +255,7 @@ def main(gpu_id=None):
 	tf.reset_default_graph()
 	x = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input']], 'stim')
 	r = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'reward')
-	to = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'target')
+	y = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'target')
 	m = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size']], 'mask')
 
 	stim = stimulus_sequence.Stimulus()
@@ -265,65 +265,41 @@ def main(gpu_id=None):
 
 		device = '/cpu:0' if gpu_id is None else '/gpu:0'
 		with tf.device(device):
-			model = Model(x, r, to, m)
+			model = Model(x, r, y, m)
 
 		sess.run(tf.global_variables_initializer())
 
 		for t in range(par['n_tasks']):
-			print()
 			for i in range(par['n_batches']):
 
-
 				name, trial_info = stim.generate_trial(t)
-				"""
-				fig, ax = plt.subplots(3,1,figsize=(12,8),)
-				ax[0].imshow(trial_info['desired_output'][:, 0, :].T, aspect = 'auto')
-				ax[1].imshow(trial_info['reward_data'][:, 0, :].T, aspect = 'auto')
-				ax[2].imshow(trial_info['neural_input'][:, 0, :].T, aspect = 'auto')
-				plt.show()
-
-				fig, ax = plt.subplots(3,1,figsize=(12,8))
-				ax[0].imshow(trial_info['desired_output'][:, 1, :].T, aspect = 'auto')
-				ax[1].imshow(trial_info['reward_data'][:, 1, :].T, aspect = 'auto')
-				ax[2].imshow(trial_info['neural_input'][:, 1, :].T, aspect = 'auto')
-				plt.show()
-				"""
-
 				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
-					to: trial_info['desired_output'], m:trial_info['train_mask']}
+					y: trial_info['desired_output'], m:trial_info['train_mask']}
 
 				_, reward, pol_loss, action, h, h_write, salient, rec_loss = \
 					sess.run([model.train_cortex, model.reward, model.pol_loss, \
 					model.action, model.h, model.h_write, model.salient, model.reconstruction_loss], feed_dict=feed_dict)
 
-
 				if i%25 == 0:
-
 					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_w: {:6.6f}  | Rec. loos: {:6.5f}  |'.format(\
 						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h), np.mean(h_write), np.mean(rec_loss)))
 
-				if i%250 == -1:
-					#print(np.squeeze(reward.shape))
-					plt.imshow(np.squeeze(reward), aspect = 'auto')
-					plt.colorbar()
-					plt.show()
-					plt.imshow(np.squeeze(action[:, 0, :]), aspect = 'auto')
-					plt.colorbar()
-					plt.show()
-					plt.imshow(np.squeeze(action[:, 1, :]), aspect = 'auto')
-					plt.colorbar()
-					plt.show()
+				if i%500 == 0:
+					print('Saving weights...')
+					weights, = sess.run([model.var_dict])
+					pickle.dump(weights, open('./savedir/{}_model_weights.pkl'.format(par['save_fn']), 'wb'))
+					print('Weights saved.\n')
 
 	print('Model complete.\n')
 
 
 def print_important_params():
 
-	notes = 'with layer normalization'
+	notes = ''
 
 	keys = ['learning_method', 'n_hidden', 'n_latent', \
 		'A_alpha', 'A_beta', 'inner_steps', 'batch_norm_inner', 'learning_rate', \
-		'trials_per_seq', 'task_list', 'fix_break_penalty', 'wrong_choice_penalty', \
+		'task_list', 'trials_per_seq', 'fix_break_penalty', 'wrong_choice_penalty', \
 		'correct_choice_reward', 'discount_rate', 'num_motion_dirs', 'spike_cost', \
 		'rec_cost', 'weight_cost', 'entropy_cost', 'val_cost', 'batch_size', 'n_batches']
 
