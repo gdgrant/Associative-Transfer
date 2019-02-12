@@ -58,6 +58,7 @@ par = {
 	'dt'					: 100,
 	'trials_per_seq'		: 20,
 	'task_list'				: [a for a in range(12)],
+	'dead_trials'			: 5,
 
 	# RL parameters
 	'fix_break_penalty'     : -1.,
