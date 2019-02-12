@@ -240,8 +240,10 @@ class Model:
 			total_loss = RL_loss + self.spike_loss + self.reconstruction_loss
 		elif par['learning_method'] == 'SL':
 			total_loss = self.task_loss + self.spike_loss + self.reconstruction_loss + 1e-15*self.val_loss
-		self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
-
+		if par['train']:
+			self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
+		else:
+			self.train_cortex = tf.no_op()
 
 
 
@@ -284,7 +286,7 @@ def main(gpu_id=None):
 					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_w: {:6.6f}  | Rec. loos: {:6.5f}  |'.format(\
 						t, i, np.mean(np.sum(reward, axis=0)), pol_loss, np.mean(h), np.mean(h_write), np.mean(rec_loss)))
 
-				if i%500 == 0:
+				if par['save_weights'] and i%500 == 0:
 					print('Saving weights...')
 					weights, = sess.run([model.var_dict])
 					pickle.dump(weights, open('./savedir/{}_model_weights.pkl'.format(par['save_fn']), 'wb'))
