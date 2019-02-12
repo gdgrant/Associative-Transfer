@@ -13,6 +13,8 @@ par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
 	'save_fn'				: 'general',
+	'train'					: True,
+	'save_weights'			: True,
 	'learning_method'		: 'SL', # 'RL' or 'SL'
 	'LSTM_init'				: 0.05,
 	'w_init'				: 0.05,
@@ -97,6 +99,14 @@ def update_parameters(updates, verbose=True, update_deps=True):
 
 	if update_deps:
 		update_dependencies()
+
+def update_weights(var_dict):
+
+	print('Setting weight values manually; disabling training and weight saving.')
+	par['train'] = False
+	par['save_weights'] = False
+	for key, val in var_dict.items():
+		par[key+'_init'] = val
 
 
 def update_dependencies():
