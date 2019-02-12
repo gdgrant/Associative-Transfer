@@ -322,7 +322,7 @@ def print_important_params():
 	notes = 'with layer normalization'
 
 	keys = ['learning_method', 'n_hidden', 'n_latent', \
-		'A_alpha', 'A_beta', 'inner_steps', 'learning_rate', \
+		'A_alpha', 'A_beta', 'inner_steps', 'batch_norm_inner', 'learning_rate', \
 		'trials_per_seq', 'task_list', 'fix_break_penalty', 'wrong_choice_penalty', \
 		'correct_choice_reward', 'discount_rate', 'num_motion_dirs', 'spike_cost', \
 		'rec_cost', 'weight_cost', 'entropy_cost', 'val_cost', 'batch_size', 'n_batches']
