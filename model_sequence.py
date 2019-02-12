@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 # Model modules
 from parameters_sequence import *
 import stimulus_sequence
-import AdamOpt
+import AdamOpt_sequence as AdamOpt
 
 # Match GPU IDs to nvidia-smi command
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -248,6 +248,8 @@ def main(gpu_id=None):
 	if gpu_id is not None:
 		os.environ['CUDA_VISIBLE_DEVICES'] = gpu_id
 
+	print_important_params()
+
 	tf.reset_default_graph()
 	x = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input']], 'stim')
 	r = tf.placeholder(tf.float32, [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol']], 'reward')
@@ -311,6 +313,23 @@ def main(gpu_id=None):
 					plt.show()
 
 	print('Model complete.\n')
+
+
+def print_important_params():
+
+	notes = ''
+
+	keys = ['learning_method', 'n_hidden', 'n_latent', \
+		'A_alpha', 'A_beta', 'inner_steps', 'learning_rate', \
+		'trials_per_seq', 'task_list', 'fix_break_penalty', 'wrong_choice_penalty', \
+		'correct_choice_reward', 'discount_rate', 'num_motion_dirs', 'spike_cost', \
+		'rec_cost', 'weight_cost', 'entropy_cost', 'val_cost', 'batch_size', 'n_batches']
+
+	print('-'*60)
+	[print('{:<24} : {}'.format(k, par[k])) for k in keys]
+	print('{:<24} : {}'.format('notes', notes))
+	print('-'*60 + '\n')
+
 
 
 if __name__ == '__main__':

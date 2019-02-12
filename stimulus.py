@@ -162,7 +162,8 @@ class Stimulus:
 
 			# Penalize fixating throughout entire trial if response was required
 			if not self.trial_info['desired_output'][-1,b,-1] == 1:
-				self.trial_info['reward_data'][-1,b,-1] = par['fix_break_penalty']
+				pass
+				#self.trial_info['reward_data'][-1,b,-1] = par['fix_break_penalty']
 			else:
 				self.trial_info['reward_data'][-1,b,-1] = par['correct_choice_reward']
 

@@ -36,7 +36,8 @@ par = {
 	'test_sample_prop'		: 0.2,
 	'train_alpha'			: 1.,
 	'train_beta'			: 0.1,
-	'associative_iters'		: 2,
+	'train_gamma'			: 4.,
+	'associative_iters'		: 5,
 
 	# Timings and rates
 	'dt'					: 20,
@@ -44,7 +45,7 @@ par = {
 
 	# Variance values
 	'input_mean'			: 0.0,
-	'noise_in'				: 0.0,
+	'noise_in'				: 0.05,
 	'noise_rnn'				: 0.05,
 
 	# Task specs
@@ -73,7 +74,7 @@ par = {
 
 	# Training specs
 	'batch_size'			: 256,
-	'n_batches'				: 3000,		# 1500 to train straight cortex
+	'n_batches'				: 1000000,		# 1500 to train straight cortex
 
 }
 
