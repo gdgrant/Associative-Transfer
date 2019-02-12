@@ -59,16 +59,13 @@ class Model:
 
 		self.h = []
 		self.h_write = []
-		self.h_read = []
 		self.h_hat = []
 		self.h_concat = []
-		self.c = []
 		self.pol_out = []
 		self.val_out = []
 		self.action  = []
 		self.reward  = []
 		self.mask    = []
-		self.salient = []
 		self.pol_out_raw  = []
 
 		h = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
@@ -120,26 +117,23 @@ class Model:
 									* mask * self.time_mask[t,:,tf.newaxis]
 
 				# Record outputs
-				self.h.append(h)
-				self.h_write.append(h_write)
-				self.h_read.append(h_read)
-				self.h_hat.append(h_hat)
-				self.h_concat.append(h_concat)
-				self.c.append(c)
-				self.pol_out.append(pol_out_sm)
-				self.pol_out_raw.append(pol_out)
-				self.val_out.append(val_out)
-				self.action.append(action)
-				self.reward.append(reward)
-				self.mask.append(mask)
-				self.salient.append(salient)
+				if i > 4: # discard the first 5 trials
+					self.h.append(h)
+					self.h_write.append(h_write)
+					self.h_hat.append(h_hat)
+					self.h_concat.append(h_concat)
+					self.pol_out.append(pol_out_sm)
+					self.pol_out_raw.append(pol_out)
+					self.val_out.append(val_out)
+					self.action.append(action)
+					self.reward.append(reward)
+					self.mask.append(mask * self.time_mask[t,:,tf.newaxis])
+
 
 		self.h = tf.stack(self.h, axis=0)
 		self.h_write = tf.stack(self.h_write, axis=0)
-		self.h_read = tf.stack(self.h_read, axis=0)
 		self.h_hat = tf.stack(self.h_hat, axis=0)
 		self.h_concat = tf.stack(self.h_concat, axis=0)
-		self.c = tf.stack(self.c, axis=0)
 		self.pol_out = tf.stack(self.pol_out, axis=0)
 		self.pol_out_raw = tf.stack(self.pol_out_raw, axis=0)
 		self.val_out = tf.stack(self.val_out, axis=0)
@@ -192,17 +186,10 @@ class Model:
 		cortex_optimizer = AdamOpt.AdamOpt(cortex_vars, learning_rate=par['learning_rate'])
 
 		# Spiking activity loss (penalty on high activation values in the hidden layer)
-		self.time_mask = self.time_mask[...,tf.newaxis]*par['sequence_mask'] # sequence mask will remove the first ~5 trials from training
 		h_write = tf.reduce_mean(self.h_write,axis = 2)
-		self.spike_loss = par['spike_cost']*tf.reduce_mean(self.mask*self.time_mask*h_write)
+		self.spike_loss = par['spike_cost']*tf.reduce_mean(self.mask*h_write)
 
-		self.reconstruction_loss = par['rec_cost']*tf.reduce_mean(self.mask*self.time_mask*tf.square(self.h_concat-self.h_hat))
-
-		self.task_loss = tf.reduce_mean(tf.squeeze(self.mask*self.time_mask)*tf.nn.softmax_cross_entropy_with_logits_v2(logits = self.pol_out_raw, \
-			labels = self.target_out, dim = -1))
-
-		# Correct time mask shape
-
+		self.reconstruction_loss = par['rec_cost']*tf.reduce_mean(self.mask*tf.square(self.h_concat-self.h_hat))
 
 		# Get the value outputs of the network, and pad the last time step
 		val_out = tf.concat([self.val_out, tf.zeros([1,par['batch_size'],par['n_val']])], axis=0)
@@ -220,17 +207,14 @@ class Model:
 		mask_static      = tf.stop_gradient(self.mask)
 		pred_val_static  = tf.stop_gradient(pred_val)
 
-		# Multiply masks together
-		full_mask        = mask_static*self.time_mask
-
 		# Policy loss
-		self.pol_loss = -tf.reduce_mean(full_mask*advantage_static*action_static*tf.log(epsilon+self.pol_out))
+		self.pol_loss = -tf.reduce_mean(mask_static*advantage_static*action_static*tf.log(epsilon+self.pol_out))
 
 		# Value loss
-		self.val_loss = 0.5*par['val_cost']*tf.reduce_mean(full_mask*tf.square(val_out[:-1,:,:]-pred_val_static))
+		self.val_loss = 0.5*par['val_cost']*tf.reduce_mean(mask_static*tf.square(val_out[:-1,:,:]-pred_val_static))
 
 		# Entropy loss
-		self.ent_loss = -par['entropy_cost']*tf.reduce_mean(tf.reduce_sum(full_mask*self.pol_out*tf.log(epsilon+self.pol_out), axis=2))
+		self.ent_loss = -par['entropy_cost']*tf.reduce_mean(tf.reduce_sum(mask_static*self.pol_out*tf.log(epsilon+self.pol_out), axis=2))
 
 		# Collect RL losses
 		RL_loss = self.pol_loss + self.val_loss - self.ent_loss
@@ -239,6 +223,8 @@ class Model:
 		if par['learning_method'] == 'RL':
 			total_loss = RL_loss + self.spike_loss + self.reconstruction_loss
 		elif par['learning_method'] == 'SL':
+			self.task_loss = tf.reduce_mean(tf.squeeze(self.mask)*tf.nn.softmax_cross_entropy_with_logits_v2(logits = self.pol_out_raw, \
+				labels = self.target_out, dim = -1))
 			total_loss = self.task_loss + self.spike_loss + self.reconstruction_loss + 1e-15*self.val_loss
 		self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
 
@@ -276,9 +262,9 @@ def main(gpu_id=None):
 				feed_dict = {x:trial_info['neural_input'], r:trial_info['reward_data'],\
 					y: trial_info['desired_output'], m:trial_info['train_mask']}
 
-				_, reward, pol_loss, action, h, h_write, salient, rec_loss = \
+				_, reward, pol_loss, action, h, h_write, rec_loss = \
 					sess.run([model.train_cortex, model.reward, model.pol_loss, \
-					model.action, model.h, model.h_write, model.salient, model.reconstruction_loss], feed_dict=feed_dict)
+					model.action, model.h, model.h_write, model.reconstruction_loss], feed_dict=feed_dict)
 
 				if i%25 == 0:
 					print('Task {:>2} | Iter {:>4} | Reward: {:6.3f} | Pol. Loss: {:6.3f} | Mean h: {:6.3f} | Mean h_w: {:6.6f}  | Rec. loos: {:6.5f}  |'.format(\
