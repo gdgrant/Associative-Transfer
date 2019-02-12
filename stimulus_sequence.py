@@ -75,15 +75,15 @@ class Stimulus:
 		elif par['task'] == 'multistim':
 
 			self.task_types = []
-			for offset in [0, np.pi]:
+			for offset in [0, np.pi/2, np.pi, -np.pi/2]:
 				self.task_types.append([self.task_go, 'go', offset])
 				self.task_types.append([self.task_go, 'rt_go', offset])
 				self.task_types.append([self.task_go, 'dly_go', offset])
-				#self.task_types.([self.task_dm, 'dm1',offset])
-				#self.task_types.([self.task_dm, 'dm2',offset])
-				#self.task_types.([self.task_dm, 'ctx_dm1',offset])
-				#self.task_types.([self.task_dm, 'ctx_dm2',offset])
-				#self.task_types.([self.task_dm, 'multsen_dm',offset])
+				self.task_types.append([self.task_dm, 'dm1',offset])
+				self.task_types.append([self.task_dm, 'dm2',offset])
+				self.task_types.append([self.task_dm, 'ctx_dm1',offset])
+				self.task_types.append([self.task_dm, 'ctx_dm2',offset])
+				self.task_types.append([self.task_dm, 'multsen_dm',offset])
 
 
 				"""
@@ -280,7 +280,7 @@ class Stimulus:
 		else:
 			raise Exception('Bad task variant.')
 
-		resp_dirs = int(np.round(par['num_motion_dirs']*(resp_dirs+offset)/(2*np.pi))%par['num_motion_dirs'])
+		resp_dirs = np.int8(np.round(par['num_motion_dirs']*(resp_dirs+offset)/(2*np.pi))%par['num_motion_dirs'])
 
 
 		resp = np.zeros([par['num_motion_dirs'], par['trials_per_seq']])

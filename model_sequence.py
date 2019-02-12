@@ -67,6 +67,7 @@ class Model:
 		self.reward  = []
 		self.mask    = []
 		self.pol_out_raw  = []
+		self.target = []
 
 		h = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		h_read = tf.zeros([par['batch_size'], par['n_latent']], dtype = tf.float32)
@@ -127,6 +128,7 @@ class Model:
 					self.val_out.append(val_out)
 					self.action.append(action)
 					self.reward.append(reward)
+					self.target.append(self.target_out[t, ...])
 					self.mask.append(mask * self.time_mask[t,:,tf.newaxis])
 
 
@@ -139,6 +141,7 @@ class Model:
 		self.val_out = tf.stack(self.val_out, axis=0)
 		self.action = tf.stack(self.action, axis=0)
 		self.reward = tf.stack(self.reward, axis=0)
+		self.target = tf.stack(self.target, axis=0)
 		self.mask = tf.stack(self.mask, axis=0)
 
 
@@ -191,40 +194,33 @@ class Model:
 
 		self.reconstruction_loss = par['rec_cost']*tf.reduce_mean(self.mask*tf.square(self.h_concat-self.h_hat))
 
-		# Get the value outputs of the network, and pad the last time step
-		val_out = tf.concat([self.val_out, tf.zeros([1,par['batch_size'],par['n_val']])], axis=0)
-
-		# Determine terminal state of the network
-		terminal_state = tf.cast(tf.logical_not(tf.equal(self.reward, tf.constant(0.))), tf.float32)
-
-		# Compute predicted value and the advantage for plugging into the policy loss
-		pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]*(1-terminal_state)
-		advantage = pred_val - val_out[:-1,:,:]
-
-		# Stop gradients back through action, advantage, and mask
-		action_static    = tf.stop_gradient(self.action)
-		advantage_static = tf.stop_gradient(advantage)
-		mask_static      = tf.stop_gradient(self.mask)
-		pred_val_static  = tf.stop_gradient(pred_val)
-
-		# Policy loss
-		self.pol_loss = -tf.reduce_mean(mask_static*advantage_static*action_static*tf.log(epsilon+self.pol_out))
-
-		# Value loss
-		self.val_loss = 0.5*par['val_cost']*tf.reduce_mean(mask_static*tf.square(val_out[:-1,:,:]-pred_val_static))
-
-		# Entropy loss
-		self.ent_loss = -par['entropy_cost']*tf.reduce_mean(tf.reduce_sum(mask_static*self.pol_out*tf.log(epsilon+self.pol_out), axis=2))
-
-		# Collect RL losses
-		RL_loss = self.pol_loss + self.val_loss - self.ent_loss
-
 		# Collect loss terms and compute gradients
 		if par['learning_method'] == 'RL':
+			# Get the value outputs of the network, and pad the last time step
+			val_out = tf.concat([self.val_out, tf.zeros([1,par['batch_size'],par['n_val']])], axis=0)
+			# Determine terminal state of the network
+			terminal_state = tf.cast(tf.logical_not(tf.equal(self.reward, tf.constant(0.))), tf.float32)
+			# Compute predicted value and the advantage for plugging into the policy loss
+			pred_val = self.reward + par['discount_rate']*val_out[1:,:,:]*(1-terminal_state)
+			advantage = pred_val - val_out[:-1,:,:]
+			# Stop gradients back through action, advantage, and mask
+			action_static    = tf.stop_gradient(self.action)
+			advantage_static = tf.stop_gradient(advantage)
+			mask_static      = tf.stop_gradient(self.mask)
+			pred_val_static  = tf.stop_gradient(pred_val)
+			# Policy loss
+			self.pol_loss = -tf.reduce_mean(mask_static*advantage_static*action_static*tf.log(epsilon+self.pol_out))
+			# Value loss
+			self.val_loss = 0.5*par['val_cost']*tf.reduce_mean(mask_static*tf.square(val_out[:-1,:,:]-pred_val_static))
+			# Entropy loss
+			self.ent_loss = -par['entropy_cost']*tf.reduce_mean(tf.reduce_sum(mask_static*self.pol_out*tf.log(epsilon+self.pol_out), axis=2))
+			# Collect RL losses
+			RL_loss = self.pol_loss + self.val_loss - self.ent_loss
 			total_loss = RL_loss + self.spike_loss + self.reconstruction_loss
+
 		elif par['learning_method'] == 'SL':
 			self.task_loss = tf.reduce_mean(tf.squeeze(self.mask)*tf.nn.softmax_cross_entropy_with_logits_v2(logits = self.pol_out_raw, \
-				labels = self.target_out, dim = -1))
+				labels = self.target, dim = -1))
 			total_loss = self.task_loss + self.spike_loss + self.reconstruction_loss + 1e-15*self.val_loss
 		if par['train']:
 			self.train_cortex = cortex_optimizer.compute_gradients(total_loss)
