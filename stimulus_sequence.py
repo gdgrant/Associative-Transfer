@@ -75,7 +75,7 @@ class Stimulus:
 		elif par['task'] == 'multistim':
 
 			self.task_types = []
-			for offset in [0, np.pi/2, np.pi, -np.pi/2]:
+			for offset in [0, np.pi, np.pi/2, -np.pi/2, np.pi/4, -np.pi/4, 3*np.pi/4, -3*np.pi/4]:
 				self.task_types.append([self.task_go, 'go', offset])
 				self.task_types.append([self.task_go, 'rt_go', offset])
 				self.task_types.append([self.task_go, 'dly_go', offset])
@@ -84,15 +84,16 @@ class Stimulus:
 				self.task_types.append([self.task_dm, 'ctx_dm1',offset])
 				self.task_types.append([self.task_dm, 'ctx_dm2',offset])
 				self.task_types.append([self.task_dm, 'multsen_dm',offset])
-
+				self.task_types.append([self.task_dm_dly, 'dm1_dly',offset])
+				self.task_types.append([self.task_dm_dly, 'dm2_dly',offset])
+				self.task_types.append([self.task_dm_dly, 'ctx_dm1_dly',offset])
+				self.task_types.append([self.task_dm_dly, 'ctx_dm2_dly',offset])
+				self.task_types.append([self.task_dm_dly, 'multsen_dm_dly',offset])
+				# the above trials are used for the 100_tasks_XXX
+				self.task_types.append([self.task_matching, 'dms',offset])
+				self.task_types.append([self.task_matching, 'dmc',offset])
 
 				"""
-				[self.task_dm_dly, 'dm1_dly'],
-				[self.task_dm_dly, 'dm2_dly'],
-				[self.task_dm_dly, 'ctx_dm1_dly'],
-				[self.task_dm_dly, 'ctx_dm2_dly'],
-				[self.task_dm_dly, 'multsen_dm_dly'],
-
 				[self.task_matching, 'dms'],
 				[self.task_matching, 'dmc'],
 				[self.task_matching, 'dnms'],
@@ -119,7 +120,7 @@ class Stimulus:
 			]
 
 
-	def generate_trial(self, task_num=0):
+	def generate_trial(self, fixed_task_num = None):
 
 		# Create blank trial info
 		self.trial_info = {
@@ -138,11 +139,17 @@ class Stimulus:
 		# Apply reinforcement learning task specifications
 		for self.trial_num in range(par['batch_size']):
 
-			task_num = np.random.choice(par['task_list'])
+			if fixed_task_num is None:
+				task_num = np.random.choice(par['task_list'])
+			else:
+				task_num = fixed_task_num
+			#print('task num ', task_num, self.task_types[task_num][1])
 			current_task = self.task_types[task_num]
 			current_task[0](*current_task[1:])
 
 			resp_vect = np.sum(self.trial_info['desired_output'][:,self.trial_num,:-1], axis=1)
+
+
 
 			for b in range(par['trials_per_seq']):
 
@@ -150,8 +157,8 @@ class Stimulus:
 				t0 = par['num_time_steps']*b
 				t1 = par['num_time_steps']*(b+1)
 				respond_time    = np.where(resp_vect[t0:t1] > 0)[0]
-				fix_time        = list(range(t0,t0+respond_time[0])) if len(respond_time) > 0 else [t1]
-				respond_time    = t0+respond_time if len(respond_time) > 0 else [t1]
+				fix_time        = list(range(t0,t0+respond_time[0])) if len(respond_time) > 0 else [t1-1]
+				respond_time    = t0+respond_time if len(respond_time) > 0 else [t1-1]
 
 				# Designate responses
 				correct_response    = np.where(self.trial_info['desired_output'][respond_time[0],self.trial_num,:]==1)[0]
@@ -180,12 +187,12 @@ class Stimulus:
 
 		# Task parameters
 		if variant == 'go':
-			stim_onset = np.random.randint(self.fix_time, self.fix_time+1000, par['trials_per_seq'])//par['dt']
+			stim_onset = np.random.randint(self.fix_time, self.fix_time+800, par['trials_per_seq'])//par['dt']
 			stim_off = par['num_time_steps']
-			fixation_end = np.ones(par['trials_per_seq'], dtype=np.int16)*(self.fix_time+1000)//par['dt']
+			fixation_end = np.ones(par['trials_per_seq'], dtype=np.int16)*(self.fix_time+800)//par['dt']
 			resp_onset = fixation_end
 		elif variant == 'rt_go':
-			stim_onset = np.random.randint(self.fix_time, self.fix_time+1000, par['trials_per_seq'])//par['dt']
+			stim_onset = np.random.randint(self.fix_time, self.fix_time+800, par['trials_per_seq'])//par['dt']
 			stim_off = par['num_time_steps']
 			fixation_end = np.ones(par['trials_per_seq'],dtype=np.int16)*par['num_time_steps']
 			resp_onset = stim_onset
@@ -320,7 +327,7 @@ class Stimulus:
 		return self.trial_info
 
 
-	def task_dm_dly(self, variant='dm1'):
+	def task_dm_dly(self, variant='dm1', offset = 0):
 
 		# Create trial stimuli
 		stim_dir1 = 2*np.pi*np.random.rand(1, par['trials_per_seq'])
@@ -383,8 +390,10 @@ class Stimulus:
 		else:
 			raise Exception('Bad task variant.')
 
-		resp = np.zeros([par['num_motion_dirs'], par['batch_size']])
-		for b in range(par['batch_size']):
+		resp_dirs = np.int8(np.round(par['num_motion_dirs']*(resp_dirs+offset)/(2*np.pi))%par['num_motion_dirs'])
+
+		resp = np.zeros([par['num_motion_dirs'], par['trials_per_seq']])
+		for b in range(par['trials_per_seq']):
 			resp[np.int16(resp_dirs[0,b]%par['num_motion_dirs']),b] = 1
 
 		# Setting up arrays
@@ -399,15 +408,18 @@ class Stimulus:
 		stim_on1   = self.fix_time//par['dt']
 		stim_off1  = (self.fix_time+300)//par['dt']
 		stim_on2   = delay + stim_off1
-		stim_off2  = stim_on2 + 300//par['dt']
-		resp_time  = stim_off2 + 0//par['dt']
+		stim_off2  = par['num_time_steps']
+		resp_time  = stim_on2
 		for b in range(par['trials_per_seq']):
-			fixation[:resp_time[0,b],self.trial_num,:] = par['tuning_height']
-			resp_fix[:resp_time[0,b],self.trial_num] = 1
-			stimulus[stim_on1:stim_off1,self.trial_num,:] = np.concatenate([modality1_t1[:,b], modality2_t1[:,b]], axis=0)[np.newaxis,:]
-			stimulus[stim_on2[0,b]:stim_off2[0,b],self.trial_num,:] = np.concatenate([modality1_t2[:,b], modality2_t2[:,b]], axis=0)[np.newaxis,:]
-			response[resp_time[0,b]:,self.trial_num,:] = resp[np.newaxis,:,b]
-			mask[resp_time[0,b]:resp_time[0,b]+par['mask_duration'],self.trial_num] = 0
+			t0 = par['num_time_steps']*b
+			t1 = par['num_time_steps']*(b+1)
+
+			fixation[t0:t0+resp_time[0,b],self.trial_num,:] = par['tuning_height']
+			resp_fix[t0:t0+resp_time[0,b],self.trial_num] = 1
+			stimulus[t0+stim_on1:t0+stim_off1,self.trial_num,:] = np.concatenate([modality1_t1[:,b], modality2_t1[:,b]], axis=0)[np.newaxis,:]
+			stimulus[t0+stim_on2[0,b]:t1,self.trial_num,:] = np.concatenate([modality1_t2[:,b], modality2_t2[:,b]], axis=0)[np.newaxis,:]
+			response[t0+resp_time[0,b]:t1,self.trial_num,:] = resp[np.newaxis,:,b]
+			mask[t0+resp_time[0,b]:t0+resp_time[0,b]+par['mask_duration'],self.trial_num] = 0
 
 		# Merge activies and fixations into single vectors
 		stimulus = np.concatenate([stimulus, fixation], axis=2)
@@ -420,19 +432,19 @@ class Stimulus:
 		return self.trial_info
 
 
-	def task_matching(self, variant='dms'):
+	def task_matching(self, variant='dms', offset = 0):
 
 		# Determine matches, and get stimuli
 		if variant in ['dms', 'dnms']:
-			stim1 = np.random.choice(self.motion_dirs, par['batch_size'])
-			nonmatch = (stim1 + np.random.choice(self.motion_dirs[1:], par['batch_size']))%(2*np.pi)
+			stim1 = np.random.choice(self.motion_dirs, par['trials_per_seq'])
+			nonmatch = (stim1 + np.random.choice(self.motion_dirs[1:], par['trials_per_seq']))%(2*np.pi)
 
-			match = np.random.choice(np.array([True, False]), par['batch_size'])
+			match = np.random.choice(np.array([True, False]), par['trials_per_seq'])
 			stim2 = np.where(match, stim1, nonmatch)
 
 		elif variant in ['dmc', 'dnmc']:
-			stim1 = np.random.choice(self.motion_dirs, par['batch_size'])
-			stim2 = np.random.choice(self.motion_dirs, par['batch_size'])
+			stim1 = np.random.choice(self.motion_dirs, par['trials_per_seq'])
+			stim2 = np.random.choice(self.motion_dirs, par['trials_per_seq'])
 
 			stim1_cat = np.logical_and(np.less(-1e-3, stim1), np.less(stim1, np.pi))
 			stim2_cat = np.logical_and(np.less(-1e-3, stim2), np.less(stim2, np.pi))
@@ -448,16 +460,18 @@ class Stimulus:
 		stim1_int = np.round(par['num_motion_dirs']*stim1/(2*np.pi))
 		stim2_int = np.round(par['num_motion_dirs']*stim2/(2*np.pi))
 
+		# Saccade targets for match and non-match
+		r0 = np.int8(np.round(par['num_motion_dirs']*offset/(2*np.pi))%par['num_motion_dirs'])
+		r1 = (r0+par['num_motion_dirs']//2)%par['num_motion_dirs']
+
 		if variant in ['dms', 'dmc']:
-			resp = np.where(match, 4, 0)#stim1_int, -1)
-		elif variant in ['dnms', 'dnmc']:
-			resp = np.where(match, 0, 4)#-1, stim2_int)
+			resp = np.where(match, r0, r1)#stim1_int, -1)
 		else:
 			raise Exception('Bad variant.')
 
 		# Setting up arrays
-		modality_choice = np.random.choice(np.array([0,1], dtype=np.int16), [2, par['batch_size']])
-		modalities = np.zeros([2, par['num_time_steps'], par['batch_size'], par['num_motion_tuned']//2])
+		modality_choice = np.random.choice(np.array([0,1], dtype=np.int16), [2, par['trials_per_seq']])
+		modalities = np.zeros([2, par['trials_per_seq']*par['num_time_steps'], par['batch_size'], par['num_motion_tuned']//2])
 		fixation = np.zeros(self.fixation_shape)
 		response = np.zeros(self.response_shape)
 		stimulus = np.zeros(self.stimulus_shape)
@@ -467,26 +481,30 @@ class Stimulus:
 		# Decide timings and build each trial
 		stim1_on  = self.fix_time//par['dt']
 		stim1_off = (self.fix_time+300)//par['dt']
-		stim2_on  = stim1_off + np.random.choice(self.match_delay, par['batch_size'])
-		stim2_off = stim2_on + 300//par['dt']
-		resp_time = stim2_off
+		stim2_on  = stim1_off + np.random.choice(self.match_delay, par['trials_per_seq'])
+		stim2_off = par['num_time_steps']
+		resp_time = stim2_on
 		resp_fix  = np.copy(fixation[:,:,0:1])
 
-		for b in range(par['batch_size']):
-			fixation[:resp_time[b],b,:] = par['tuning_height']
+		for b in range(par['trials_per_seq']):
+			t0 = par['num_time_steps']*b
+			t1 = par['num_time_steps']*(b+1)
+
+			fixation[t0:t0+resp_time[b],self.trial_num,:] = par['tuning_height']
 
 			# Ensuring that sample and test stimuli are in same modality (RF)
-			modalities[modality_choice[0,b],stim1_on:stim1_off,b,:] = stimulus1[np.newaxis,:,b]
-			modalities[modality_choice[0,b],stim2_on[b]:stim2_off[b],b,:] = stimulus2[np.newaxis,:,b]
+			modalities[modality_choice[0,b],t0+stim1_on:t0+stim1_off,self.trial_num,:] = stimulus1[np.newaxis,:,b]
+			modalities[modality_choice[0,b],t0+stim2_on[b]:t1,self.trial_num,:] = stimulus2[np.newaxis,:,b]
 
-			mask[resp_time[b]:resp_time[b]+par['mask_duration']//par['dt'],b] = 0
+			mask[t0+resp_time[b]:t0+resp_time[b]+par['mask_duration']//par['dt'],self.trial_num] = 0
 			if not resp[b] == -1:
-				response[resp_time[b]:,b,int(resp[b])] = 1
-				resp_fix[:resp_time[b],b] = 1
+				response[t0+resp_time[b]:t1,self.trial_num,int(resp[b])] = 1
+				resp_fix[t0:t0+resp_time[b],self.trial_num] = 1
 			else:
-				resp_fix[:,b,:] = 1
+				resp_fix[t0:t1,b,:] = 1
 
 		# Merge activies and fixations into single vectors)
+		#print(modalities.shape, fixation.shape)
 		stimulus = np.concatenate([modalities[0], modalities[1], fixation], axis=2)
 		response = np.concatenate([response, resp_fix], axis=2)
 
