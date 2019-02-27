@@ -1,7 +1,7 @@
 ### Authors: Nicolas Y. Masse, Gregory D. Grant
 
 import numpy as np
-from parameters_sequence import par
+from parameters_WM import par
 
 class Stimulus:
 
@@ -78,6 +78,13 @@ class Stimulus:
 			for offset in [0, np.pi, np.pi/2, -np.pi/2, np.pi/4, -np.pi/4, 3*np.pi/4, -3*np.pi/4]:
 				self.task_types.append([self.task_go, 'go', offset])
 				self.task_types.append([self.task_go, 'rt_go', offset])
+				self.task_types.append([self.task_go, 'go_OIC', offset, 0])
+				self.task_types.append([self.task_go, 'go_OIC', offset, 2])
+				self.task_types.append([self.task_go, 'rt_OIC', offset, 0])
+				self.task_types.append([self.task_go, 'rt_OIC', offset, 2])
+
+				#self.task_types.append([self.task_go, 'go_OIC', offset, 5])
+
 				self.task_types.append([self.task_go, 'dly_go', offset])
 				self.task_types.append([self.task_dm, 'dm1',offset])
 				self.task_types.append([self.task_dm, 'dm2',offset])
@@ -127,6 +134,7 @@ class Stimulus:
 			'neural_input'   : np.random.normal(par['input_mean'], par['noise_in'], size=self.input_shape),
 			'desired_output' : np.zeros(self.output_shape, dtype=np.float32),
 			'reward_data'    : np.zeros(self.output_shape, dtype=np.float32),
+			'reward_matrix'  : np.zeros([*self.output_shape, par['num_reward_types']], dtype=np.float32),
 			'train_mask'     : np.ones(self.mask_shape, dtype=np.float32)
 		}
 
@@ -150,7 +158,6 @@ class Stimulus:
 			resp_vect = np.sum(self.trial_info['desired_output'][:,self.trial_num,:-1], axis=1)
 
 
-
 			for b in range(par['trials_per_seq']):
 
 				# Designate timings
@@ -166,32 +173,44 @@ class Stimulus:
 
 				# Build reward data
 				self.trial_info['reward_data'][fix_time,self.trial_num,:-1] = par['fix_break_penalty']
+				self.trial_info['reward_matrix'][fix_time,self.trial_num,:-1, 0] = 1.
 				self.trial_info['reward_data'][respond_time,self.trial_num,correct_response] = par['correct_choice_reward']
+				self.trial_info['reward_matrix'][respond_time,self.trial_num,correct_response, 3] = 1.
+				self.trial_info['reward_matrix'][fix_time,self.trial_num,-1, 2] = 1.
+
+
 				for i in incorrect_response:
 					self.trial_info['reward_data'][respond_time,self.trial_num,i] = par['wrong_choice_penalty']
+					self.trial_info['reward_matrix'][respond_time,self.trial_num,i,1] = 1.
 
 					# Penalize fixating throughout entire trial if response was required
 					if not self.trial_info['desired_output'][t1-1,self.trial_num,-1] == 1:
-						self.trial_info['reward_data'][t1-1,self.trial_num,-1] = par['fix_break_penalty']
+						pass
+						#self.trial_info['reward_data'][t1-1,self.trial_num,-1] = par['fix_break_penalty']
+						#self.trial_info['reward_matrix'][t1-1,self.trial_num,-1, 0] = 1.
 					else:
 						self.trial_info['reward_data'][t1-1,self.trial_num,-1] = par['correct_choice_reward']
+						self.trial_info['reward_matrix'][t1-1,self.trial_num,-1, 3] = 1.
 
 		# Make required corrections
 		self.trial_info['neural_input'] = np.maximum(0., self.trial_info['neural_input'])
+
+		# SIMPLIFYING STIM; TESTING ONLY
+		self.trial_info['neural_input'] = np.float32(self.trial_info['neural_input'] > par['tuning_height']-0.001)
 
 		# Returns the task name and trial info
 		return current_task[1], self.trial_info
 
 
-	def task_go(self, variant='go', offset=0):
+	def task_go(self, variant='go', offset=0, cat_boundary = 0):
 
 		# Task parameters
-		if variant == 'go':
+		if variant == 'go' or variant == 'go_OIC':
 			stim_onset = np.random.randint(self.fix_time, self.fix_time+800, par['trials_per_seq'])//par['dt']
 			stim_off = par['num_time_steps']
 			fixation_end = np.ones(par['trials_per_seq'], dtype=np.int16)*(self.fix_time+800)//par['dt']
 			resp_onset = fixation_end
-		elif variant == 'rt_go':
+		elif variant == 'rt_go' or variant == 'rt_OIC':
 			stim_onset = np.random.randint(self.fix_time, self.fix_time+800, par['trials_per_seq'])//par['dt']
 			stim_off = par['num_time_steps']
 			fixation_end = np.ones(par['trials_per_seq'],dtype=np.int16)*par['num_time_steps']
@@ -223,8 +242,18 @@ class Stimulus:
 			modality   = np.random.randint(2)
 			neuron_ind = range(self.modality_size*modality, self.modality_size*(1+modality))
 			stim_dir   = np.random.choice(self.motion_dirs)
-			target_ind = int(np.round(par['num_motion_dirs']*(stim_dir+offset)/(2*np.pi))%par['num_motion_dirs'])
+			if 'OIC' in variant:
+				stim_index = int(np.round(par['num_motion_dirs']*(stim_dir+offset)/(2*np.pi)))
+				stimulus_category_one = (stim_index in \
+					list(np.arange(cat_boundary,cat_boundary+par['num_motion_dirs']//2)%par['num_motion_dirs']))
+				if stimulus_category_one:
+					target_ind = int(np.round(par['num_motion_dirs']*(offset)/(2*np.pi))%par['num_motion_dirs'])
+				else:
+					target_ind = int(np.round(par['num_motion_dirs']*(offset+np.pi)/(2*np.pi))%par['num_motion_dirs'])
+			else:
+				target_ind = int(np.round(par['num_motion_dirs']*(stim_dir+offset)/(2*np.pi))%par['num_motion_dirs'])
 
+			#print(b, stim_dir, stim_index, stimulus_category_one, target_ind)
 			#print('stim_dir', stim_dir)
 
 			self.trial_info['neural_input'][t0+stim_onset[b]:t0+stim_off, self.trial_num, neuron_ind] += np.reshape(self.circ_tuning(stim_dir),(1,-1))
@@ -312,7 +341,11 @@ class Stimulus:
 
 			fixation[t0:t0+stim_off[b],self.trial_num,:] = par['tuning_height']
 			resp_fix[t0:t0+stim_off[b],self.trial_num] = 1
-			stimulus[t0+stim_onset:t0+stim_off[b],self.trial_num,:] = np.transpose(np.concatenate([modality1[:,b], modality2[:,b]], axis=0)[:,np.newaxis])
+			#stimulus[t0+stim_onset:t0+stim_off[b],self.trial_num,:] = np.transpose(np.concatenate([modality1[:,b], modality2[:,b]], axis=0)[:,np.newaxis])
+
+			# TEMP CHANGE SO NO WORKING MEMORY REQUIRED
+			stimulus[t0+stim_onset:t1,self.trial_num,:] = np.transpose(np.concatenate([modality1[:,b], modality2[:,b]], axis=0)[:,np.newaxis])
+
 			response[t0+stim_off[b]:t1,self.trial_num,:] = np.transpose(resp[:,b,np.newaxis])
 			mask[t0+stim_off[b]:t0+stim_off[b]+par['mask_duration']//par['dt'],self.trial_num] = 0
 

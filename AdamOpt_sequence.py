@@ -54,6 +54,28 @@ class AdamOpt:
 
         return train_op
 
+    def apply_gradients(self, grad_dict):
+
+        self.t += 1
+        lr = self.learning_rate*np.sqrt(1-self.beta2**self.t)/(1-self.beta1**self.t)
+        self.update_var_op = []
+
+        for var in self.variables:
+
+            new_m = self.beta1*self.m[var.op.name] + (1-self.beta1)*grad_dict[var.op.name]
+            new_v = self.beta2*self.v[var.op.name] + (1-self.beta2)*grad_dict[var.op.name]*grad_dict[var.op.name]
+
+            delta_grad = - lr*new_m/(tf.sqrt(new_v) + self.epsilon)
+            delta_grad = tf.clip_by_norm(delta_grad, 1)
+
+            self.update_var_op.append(tf.assign(self.m[var.op.name], new_m))
+            self.update_var_op.append(tf.assign(self.v[var.op.name], new_v))
+
+            self.update_var_op.append(tf.assign(self.delta_grads[var.op.name], delta_grad))
+            self.update_var_op.append(tf.assign_add(var, delta_grad))
+
+        return tf.group(*self.update_var_op)
+
 
     def compute_gradients(self, loss):
 
@@ -86,7 +108,7 @@ class AdamOpt:
         return tf.group(*self.update_var_op)
 
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients_OLD(self, grads_and_vars):
         # currently not in use
         for (grad, var) in grads_and_vars:
             if 'W_rnn' in var.op.name:
