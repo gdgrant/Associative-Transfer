@@ -95,8 +95,9 @@ class Model:
 			for k in range(par['num_time_steps']):
 
 				t = i*par['num_time_steps'] + k
+				h_td = tf.stop_gradient(h)
 				x = tf.nn.relu(mask*self.stimulus_data[t] @ self.var_dict['W0'] + \
-					h @ self.var_dict['W_td'] + self.var_dict['b0'])
+					h_td @ self.var_dict['W_td'] + self.var_dict['b0'])
 				#print('x', x, self.var_dict['W1'])
 				x = tf.nn.relu(x @ self.var_dict['W1'] + self.var_dict['b1'])
 				x /= (1e-9 + tf.reduce_sum(x, axis = -1, keepdims = True))
