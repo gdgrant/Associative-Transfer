@@ -12,7 +12,7 @@ print('\n--> Loading parameters...')
 par = {
 	# Setup parameters
 	'savedir'				: './savedir/',
-	'save_fn'				: '140_tasks_v0',
+	'save_fn'				: '140_tasks_td_True',
 	'train'					: True,
 	'save_weights'			: True,
 	'learning_method'		: 'RL', # 'RL' or 'SL'
@@ -29,13 +29,14 @@ par = {
 	'n_module_out'			: 10,
 	'n_ff0'					: 100,
 	'n_ff1'					: 100,
+	'top_down'				: False,
 
 
 	# Encoder configuration
 	'n_latent'				: 100,
 	'enc_activity_cost'		: 0.1,
 	'enc_weight_cost'		: 0.05,
-	'internal_sampling'		: False,
+	'internal_sampling'		: True,
 
 	# Cortex configuration
 	'sample_step'			: 5,
@@ -156,7 +157,7 @@ def update_dependencies():
 	par['W0_init'] = np.random.uniform(-0.02, 0.02, size=[par['n_input'], par['n_ff0']]).astype(np.float32)
 	par['W1_init'] = np.random.uniform(-0.02, 0.02, size=[par['n_ff0'], par['n_ff1']]).astype(np.float32)
 	par['W_td_init'] = np.random.uniform(-0.02, 0.02, size=[par['n_hidden'], par['n_ff0']]).astype(np.float32)
-
+	par['W_rnn_init'] = np.random.uniform(-0.02, 0.02, size=[par['n_ff0'], par['n_ff0']]).astype(np.float32)
 	par['b0_init'] = np.zeros([1, par['n_ff0']], dtype=np.float32)
 	par['b1_init'] = np.zeros([1, par['n_ff1']], dtype=np.float32)
 

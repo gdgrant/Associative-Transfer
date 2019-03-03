@@ -47,7 +47,8 @@ class Model:
 	def declare_variables(self):
 
 		self.var_dict = {}
-		ff_prefixes   = ['W0', 'b0','W1','b1', 'W_td']
+		ff_prefixes   = ['W0', 'b0','W1','b1', 'W_td'] if par['top_down'] else \
+			['W0', 'b0','W1','b1', 'W_rnn']
 		lstm_prefixes = ['Wf', 'Wi', 'Wo', 'Wc', 'Uf', 'Ui', 'Uo', 'Uc', \
 			'bf', 'bi', 'bo', 'bc']
 		module_prefixes = ['Y', 'bY', 'Xp']
@@ -78,6 +79,7 @@ class Model:
 		self.A = []
 		self.h_read = []
 
+		x = tf.zeros([par['batch_size'], par['n_ff0']], dtype = tf.float32)
 		h = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		c = tf.zeros([par['batch_size'], par['n_hidden']], dtype = tf.float32)
 		A = tf.zeros([par['batch_size'], par['n_ff1'], par['n_pol'], par['n_val']], dtype = tf.float32)
@@ -95,13 +97,16 @@ class Model:
 			for k in range(par['num_time_steps']):
 
 				t = i*par['num_time_steps'] + k
-				h_td = tf.stop_gradient(h)
-				x = tf.nn.relu(mask*self.stimulus_data[t] @ self.var_dict['W0'] + \
-					h_td @ self.var_dict['W_td'] + self.var_dict['b0'])
+				if par['top_down']:
+					h_td = tf.stop_gradient(h)
+					x = tf.nn.relu(mask*self.stimulus_data[t] @ self.var_dict['W0'] + \
+						h_td @ self.var_dict['W_td'] + self.var_dict['b0'])
+				else:
+					x = tf.nn.relu(mask*self.stimulus_data[t] @ self.var_dict['W0'] + \
+						x @ self.var_dict['W_rnn'] + self.var_dict['b0'])
 				#print('x', x, self.var_dict['W1'])
-				x = tf.nn.relu(x @ self.var_dict['W1'] + self.var_dict['b1'])
-				x /= (1e-9 + tf.reduce_sum(x, axis = -1, keepdims = True))
-				x /= (1e-9 + x @ par['W_norm'])
+				y = tf.nn.relu(x @ self.var_dict['W1'] + self.var_dict['b1'])
+				y /= (1e-9 + y @ par['W_norm'])
 
 				h_read = self.read_fast_weights(A, x)
 
@@ -244,7 +249,7 @@ class Model:
 			state_count = epsilon + tf.reduce_sum(h_read, axis = -1, keepdims = True)
 			h_read /= state_count
 			entropy = -tf.reduce_mean(tf.reduce_sum(h_read*tf.log(epsilon + h_read), axis = -1))
-			ff_loss = entropy - 0.1*tf.reduce_mean(self.h**2)
+			ff_loss = entropy + 0.01*tf.reduce_mean(self.h)
 			train_ops.append(adam_optimizer.minimize(ff_loss, var_list = ff_vars))
 
 			train_ops.append(adam_optimizer.minimize(self.pol_loss + par['val_cost']*self.val_loss \
@@ -344,7 +349,7 @@ def print_important_params():
 
 	notes = ''
 
-	keys = ['learning_method', 'n_hidden', 'n_latent', 'noise_in','noise_rnn',\
+	keys = ['learning_method', 'n_hidden', 'n_latent', 'noise_in','noise_rnn','top_down',\
 		'A_alpha_init', 'A_beta_init', 'inner_steps', 'batch_norm_inner', 'learning_rate', \
 		'task_list', 'trials_per_seq', 'fix_break_penalty', 'wrong_choice_penalty', \
 		'correct_choice_reward', 'discount_rate', 'num_motion_dirs', 'spike_cost', \
