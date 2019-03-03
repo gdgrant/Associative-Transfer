@@ -1,10 +1,10 @@
 import numpy as np
 import os, sys
 import pickle
-from parameters_sequence import *
-import model_sequence as model
+from parameters_v2 import *
+import model_v2 as model
 
-weights_file = './savedir/general_model_weights.pkl'
+weights_file = './savedir/45_tasks_TEST_v2_model_weights.pkl'
 var_dict = pickle.load(open(weights_file, 'rb'))
 update_weights(var_dict)
 

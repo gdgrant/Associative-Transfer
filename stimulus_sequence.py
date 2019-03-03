@@ -1,7 +1,7 @@
 ### Authors: Nicolas Y. Masse, Gregory D. Grant
 
 import numpy as np
-from parameters_WM import par
+from parameters_v2 import par
 
 class Stimulus:
 
@@ -99,7 +99,7 @@ class Stimulus:
 				# the above trials are used for the 100_tasks_XXX
 				self.task_types.append([self.task_matching, 'dms',offset])
 				self.task_types.append([self.task_matching, 'dmc',offset])
-
+				
 				"""
 				[self.task_matching, 'dms'],
 				[self.task_matching, 'dmc'],
