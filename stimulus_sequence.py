@@ -1,7 +1,10 @@
 ### Authors: Nicolas Y. Masse, Gregory D. Grant
 
 import numpy as np
-from parameters_v2 import par
+from parameters_v6 import par
+from math import gamma
+import scipy.signal
+import matplotlib.pyplot as plt
 
 class Stimulus:
 
@@ -9,6 +12,7 @@ class Stimulus:
 
 		# Stimulus shapes
 		self.input_shape    = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_input'] ]
+		self.filtered_input_shape    = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_filters']*par['n_input'] ]
 		self.output_shape   = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['n_pol'] ]
 		self.stimulus_shape = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_motion_tuned'] ]
 		self.response_shape = [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_motion_dirs'] ]
@@ -16,6 +20,8 @@ class Stimulus:
 		self.rule_shape		= [par['num_time_steps']*par['trials_per_seq'], par['batch_size'], par['num_rule_tuned'] ]
 		self.mask_shape     = [par['num_time_steps']*par['trials_per_seq'], par['batch_size']]
 
+		# Gamma filters
+		self.gamma_filters = self.make_gamma_filters()
 
 		# Motion information
 		self.modality_size    	= par['num_motion_tuned']//2
@@ -43,6 +49,18 @@ class Stimulus:
 
 		# Initialize task interface
 		self.get_tasks()
+
+	def make_gamma_filters(self):
+
+		c = 0.08
+		t = np.arange(1000//par['dt'])/(1000/par['dt'])
+		f = np.zeros((1, par['n_filters'], len(t)), dtype = np.float32)
+		for i in range(par['n_filters']):
+			k = 2**i
+			f[0, i, :] = t**(k-1)*np.exp(-t/c)/(gamma(k)*c**k)
+			f[0, i, :] /= np.sum(f[0, i, :])
+
+		return np.real(f)
 
 
 	def circ_tuning(self, theta):
@@ -76,36 +94,40 @@ class Stimulus:
 
 			self.task_types = []
 			for offset in [0, np.pi, np.pi/2, -np.pi/2, np.pi/4, -np.pi/4, 3*np.pi/4, -3*np.pi/4]:
+
+
 				self.task_types.append([self.task_go, 'go', offset])
 				self.task_types.append([self.task_go, 'rt_go', offset])
+
+
 				self.task_types.append([self.task_go, 'go_OIC', offset, 0])
 				self.task_types.append([self.task_go, 'go_OIC', offset, 2])
 				self.task_types.append([self.task_go, 'rt_OIC', offset, 0])
 				self.task_types.append([self.task_go, 'rt_OIC', offset, 2])
 
 				#self.task_types.append([self.task_go, 'go_OIC', offset, 5])
+				#self.task_types.append([self.task_go, 'dly_go', offset])
 
-				self.task_types.append([self.task_go, 'dly_go', offset])
 				self.task_types.append([self.task_dm, 'dm1',offset])
 				self.task_types.append([self.task_dm, 'dm2',offset])
+
 				self.task_types.append([self.task_dm, 'ctx_dm1',offset])
 				self.task_types.append([self.task_dm, 'ctx_dm2',offset])
 				self.task_types.append([self.task_dm, 'multsen_dm',offset])
+				"""
+
 				self.task_types.append([self.task_dm_dly, 'dm1_dly',offset])
 				self.task_types.append([self.task_dm_dly, 'dm2_dly',offset])
 				self.task_types.append([self.task_dm_dly, 'ctx_dm1_dly',offset])
 				self.task_types.append([self.task_dm_dly, 'ctx_dm2_dly',offset])
 				self.task_types.append([self.task_dm_dly, 'multsen_dm_dly',offset])
 				# the above trials are used for the 100_tasks_XXX
+
 				self.task_types.append([self.task_matching, 'dms',offset])
 				self.task_types.append([self.task_matching, 'dmc',offset])
-				
 				"""
-				[self.task_matching, 'dms'],
-				[self.task_matching, 'dmc'],
-				[self.task_matching, 'dnms'],
-				[self.task_matching, 'dnmc']
-				"""
+
+
 
 
 		elif par['task'] == 'twelvestim':
@@ -132,6 +154,7 @@ class Stimulus:
 		# Create blank trial info
 		self.trial_info = {
 			'neural_input'   : np.random.normal(par['input_mean'], par['noise_in'], size=self.input_shape),
+			'neural_input_filtered'   : np.random.normal(par['input_mean'], par['noise_in'], size=self.filtered_input_shape),
 			'desired_output' : np.zeros(self.output_shape, dtype=np.float32),
 			'reward_data'    : np.zeros(self.output_shape, dtype=np.float32),
 			'reward_matrix'  : np.zeros([*self.output_shape, par['num_reward_types']], dtype=np.float32),
@@ -196,7 +219,19 @@ class Stimulus:
 		self.trial_info['neural_input'] = np.maximum(0., self.trial_info['neural_input'])
 
 		# SIMPLIFYING STIM; TESTING ONLY
-		self.trial_info['neural_input'] = np.float32(self.trial_info['neural_input'] > par['tuning_height']-0.001)
+		#self.trial_info['neural_input'] = np.float32(self.trial_info['neural_input'] > par['tuning_height']-0.001)
+
+		s = [scipy.signal.convolve(self.trial_info['neural_input'], np.transpose(self.gamma_filters[0:1,i:i+1,:],[2,1,0]), 'full') \
+			for i in range(par['n_filters'])]
+		"""
+		for i in range(5):
+			plt.imshow(s[i][:, 0, :], aspect = 'auto')
+			plt.show()
+		"""
+		s_concat = np.concatenate([*s], axis = -1)
+		s_concat = s_concat[:par['num_time_steps']*par['trials_per_seq'], :,:]
+		self.trial_info['neural_input_filtered'] = s_concat
+
 
 		# Returns the task name and trial info
 		return current_task[1], self.trial_info
@@ -259,6 +294,7 @@ class Stimulus:
 			self.trial_info['neural_input'][t0+stim_onset[b]:t0+stim_off, self.trial_num, neuron_ind] += np.reshape(self.circ_tuning(stim_dir),(1,-1))
 			self.trial_info['desired_output'][t0+resp_onset[b]:t1, self.trial_num, target_ind] = 1
 			self.trial_info['desired_output'][t0:t0+resp_onset[b], self.trial_num, -1] = 1
+
 
 			self.trial_info['train_mask'][t0+resp_onset[b]:t0+resp_onset[b]+par['mask_duration']//par['dt'], self.trial_num] = 0
 
